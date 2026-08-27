@@ -131,9 +131,16 @@
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
     scene.add(roadMesh);
 
-    // --- Road Markings ---
-    const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
-    const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // --- Flat Road Markings Fix ---
+    const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00, side: THREE.DoubleSide });
+    const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+
+    // Pre-orient geometry horizontally on the ground plane (X/Z)
+    const dashGeo = new THREE.PlaneGeometry(0.35, 3);
+    dashGeo.rotateX(-Math.PI / 2);
+
+    const edgeGeo = new THREE.PlaneGeometry(0.35, 3.5);
+    edgeGeo.rotateX(-Math.PI / 2);
 
     for (let i = 0; i < curvePoints.length; i++) {
       const pt = curvePoints[i];
@@ -141,24 +148,28 @@
       const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
+      // Center dash
       if (i % 3 === 0) {
-        const centerDash = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3), lineMatYellow);
-        centerDash.position.copy(pt);
-        centerDash.position.y = 0.03;
-        centerDash.lookAt(nextPt);
+        const centerDash = new THREE.Mesh(dashGeo, lineMatYellow);
+        centerDash.position.set(pt.x, 0.02, pt.z);
+        centerDash.lookAt(nextPt.x, 0.02, nextPt.z);
         scene.add(centerDash);
       }
 
-      const leftEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3.5), lineMatWhite);
-      leftEdge.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
-      leftEdge.position.y = 0.03;
-      leftEdge.lookAt(nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6));
+      // Left edge line
+      const leftPos = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
+      const leftNext = nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
+      const leftEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
+      leftEdge.position.set(leftPos.x, 0.02, leftPos.z);
+      leftEdge.lookAt(leftNext.x, 0.02, leftNext.z);
       scene.add(leftEdge);
 
-      const rightEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3.5), lineMatWhite);
-      rightEdge.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
-      rightEdge.position.y = 0.03;
-      rightEdge.lookAt(nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6)));
+      // Right edge line
+      const rightPos = pt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
+      const rightNext = nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
+      const rightEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
+      rightEdge.position.set(rightPos.x, 0.02, rightPos.z);
+      rightEdge.lookAt(rightNext.x, 0.02, rightNext.z);
       scene.add(rightEdge);
     }
 
@@ -238,7 +249,6 @@
       const laneSide = i % 2 === 0 ? 1 : -1;
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
 
-      // Scaled down to 20% of previous speed (0.00008 to 0.00014)
       const baseSpeed = (0.0004 + Math.random() * 0.0003) * 0.2;
 
       aiCars.push({
@@ -385,7 +395,7 @@
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
-      // --- Update AI Traffic (20% Speed Adjusted) ---
+      // --- Update AI Traffic ---
       aiCars.forEach(ai => {
         ai.progress += ai.currentSpeed * ai.direction;
         if (ai.progress > 1) ai.progress -= 1;

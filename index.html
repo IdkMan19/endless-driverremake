@@ -8,7 +8,7 @@
     body {
       margin: 0;
       overflow: hidden;
-      background-color: #0b0b1a;
+      background-color: #87ceeb;
       font-family: sans-serif;
     }
     #ui {
@@ -20,7 +20,7 @@
       pointer-events: none;
     }
     #speedometer {
-      font-size: 20px;
+      font-size: 22px;
       font-weight: bold;
       color: #00ffcc;
       margin-top: 5px;
@@ -29,8 +29,8 @@
 </head>
 <body>
   <div id="ui">
-    <h1 style="margin:0; font-size: 24px;">Physics Simulator Drive</h1>
-    <p style="margin:5px 0 0 0;"><b>W / Up</b> = Accelerate | <b>S / Down</b> = Reverse/Brake</p>
+    <h1 style="margin:0; font-size: 24px;">Endless Physics Drive</h1>
+    <p style="margin:5px 0 0 0;"><b>W / Up</b> = Accelerate | <b>S / Down</b> = Brake / Reverse</p>
     <p style="margin:2px 0 0 0;"><b>A / D</b> or <b>Left / Right</b> = Steer</p>
     <div id="speedometer">0 MPH</div>
   </div>
@@ -40,10 +40,10 @@
   <script>
     // --- Scene Setup ---
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb); // Daylight sky color
+    scene.background = new THREE.Color(0x87ceeb);
     scene.fog = new THREE.FogExp2(0x87ceeb, 0.003);
 
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
@@ -53,72 +53,97 @@
     scene.add(ambientLight);
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(50, 100, 50);
+    dirLight.position.set(100, 150, 50);
     scene.add(dirLight);
 
-    // --- Infinite Ground Terrain (Grass) ---
-    const grassGeo = new THREE.PlaneGeometry(3000, 3000);
+    // --- Infinite Grass Ground ---
+    // A massive plane that locks onto the car's position so it never ends
+    const grassGeo = new THREE.PlaneGeometry(5000, 5000);
     const grassMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
     const grass = new THREE.Mesh(grassGeo, grassMat);
     grass.rotation.x = -Math.PI / 2;
     grass.position.y = -0.05;
     scene.add(grass);
 
-    // --- Curving Road with Lane Lines ---
-    const ROAD_WIDTH = 14;
+    // --- Two-Lane Road Generation ---
+    const ROAD_WIDTH = 18; // Full two-lane road width
     const pathPoints = [];
     
-    // Generate a long winding road path in 3D space
+    // Generate a long winding road path
     let rX = 0, rZ = 0;
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 300; i++) {
       pathPoints.push(new THREE.Vector3(rX, 0, rZ));
-      rZ -= 30;
-      rX += Math.sin(i * 0.2) * 20; // Smooth curve geometry
+      rZ -= 40;
+      rX += Math.sin(i * 0.15) * 35;
     }
 
     const roadCurve = new THREE.CatmullRomCurve3(pathPoints);
 
-    // Create Road Asphalt Ribbon
-    const roadGeo = new THREE.TubeGeometry(roadCurve, 600, ROAD_WIDTH / 2, 2, false);
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x333338, side: THREE.DoubleSide });
+    // 1. Asphalt Surface (Main Road Mesh)
+    const roadGeo = new THREE.TubeGeometry(roadCurve, 1000, ROAD_WIDTH / 2, 2, false);
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x2c2c30, side: THREE.DoubleSide });
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-    roadMesh.scale.set(1, 0.01, 1); // Flatten tube into flat ribbon
+    roadMesh.scale.set(1, 0.01, 1);
     scene.add(roadMesh);
 
-    // Create Yellow Center Lane Markings
-    const lanePoints = roadCurve.getSpacedPoints(300);
-    const laneGeo = new THREE.BoxGeometry(0.4, 0.05, 2);
-    const laneMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+    // 2. Road Markings (Dashed Center Line & Solid Shoulders)
+    const roadSamples = roadCurve.getSpacedPoints(800);
+    const centerDashGeo = new THREE.BoxGeometry(0.3, 0.05, 3);
+    const centerDashMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
 
-    for (let i = 0; i < lanePoints.length - 1; i += 2) {
-      const laneMark = new THREE.Mesh(laneGeo, laneMat);
-      laneMark.position.copy(lanePoints[i]);
-      laneMark.position.y = 0.02;
-      
-      // Orient dash toward next road segment
-      laneMark.lookAt(lanePoints[i + 1]);
-      scene.add(laneMark);
+    const shoulderLineGeo = new THREE.BoxGeometry(0.3, 0.05, 4);
+    const shoulderLineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    for (let i = 0; i < roadSamples.length - 1; i++) {
+      const pt = roadSamples[i];
+      const nextPt = roadSamples[i + 1];
+      const tangent = roadCurve.getTangentAt(i / roadSamples.length);
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+      // Yellow Center Dashed Line (Every 2 steps)
+      if (i % 2 === 0) {
+        const centerDash = new THREE.Mesh(centerDashGeo, centerDashMat);
+        centerDash.position.copy(pt);
+        centerDash.position.y = 0.02;
+        centerDash.lookAt(nextPt);
+        scene.add(centerDash);
+      }
+
+      // Solid White Outer Shoulder Lines (Left & Right)
+      if (i % 2 === 0) {
+        const leftLine = new THREE.Mesh(shoulderLineGeo, shoulderLineMat);
+        leftLine.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
+        leftLine.position.y = 0.02;
+        leftLine.lookAt(nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6));
+        scene.add(leftLine);
+
+        const rightLine = new THREE.Mesh(shoulderLineGeo, shoulderLineMat);
+        rightLine.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
+        rightLine.position.y = 0.02;
+        rightLine.lookAt(nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6)));
+        scene.add(rightLine);
+      }
     }
 
-    // Add Trees on both sides of the road
-    const treeGeo = new THREE.ConeGeometry(2, 6, 5);
+    // --- Scenery (Trees along Road) ---
+    const treeGeo = new THREE.ConeGeometry(2.5, 7, 5);
     const treeMat = new THREE.MeshLambertMaterial({ color: 0x1b5e20 });
 
-    for (let i = 5; i < lanePoints.length; i += 3) {
-      const pt = lanePoints[i];
-      const tangent = roadCurve.getTangentAt(i / lanePoints.length);
+    for (let i = 5; i < roadSamples.length; i += 4) {
+      const pt = roadSamples[i];
+      const tangent = roadCurve.getTangentAt(i / roadSamples.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
       // Left Tree
       const treeL = new THREE.Mesh(treeGeo, treeMat);
-      treeL.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 + 5 + Math.random() * 10);
-      treeL.position.y = 3;
+      treeL.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 + 6 + Math.random() * 12);
+      treeL.position.y = 3.5;
       scene.add(treeL);
 
       // Right Tree
       const treeR = new THREE.Mesh(treeGeo, treeMat);
-      treeR.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 + 5 + Math.random() * 10));
-      treeR.position.y = 3;
+      treeR.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 + 6 + Math.random() * 12));
+      treeR.position.y = 3.5;
       scene.add(treeR);
     }
 
@@ -143,10 +168,10 @@
     wheelGeo.rotateZ(Math.PI / 2);
 
     const wheelPositions = [
-      [-1.1, 0.4, 1.2],  // Rear Left
-      [1.1, 0.4, 1.2],   // Rear Right
-      [-1.1, 0.4, -1.2], // Front Left
-      [1.1, 0.4, -1.2]   // Front Right
+      [-1.1, 0.4, 1.2],
+      [1.1, 0.4, 1.2],
+      [-1.1, 0.4, -1.2],
+      [1.1, 0.4, -1.2]
     ];
 
     wheelPositions.forEach((pos) => {
@@ -158,20 +183,21 @@
     scene.add(carGroup);
     carGroup.position.set(0, 0, 0);
 
-    // --- Car Physics State ---
+    // --- Tuned Physics Controls ---
     let speed = 0;
     let steeringAngle = 0;
+    let steerHoldTime = 0; // Tracks how long a turn key is held
     
-    // Adjusted Tuning Parameters
-    const ACCEL = 0.007;          // Slower acceleration (was 0.015)
-    const BRAKE = 0.025;          // Sensitive brakes
-    const REVERSE_ACCEL = 0.005;  // Reverse speed buildup
-    const FRICTION = 0.985;       // Natural coasting drag
-    const MAX_SPEED = 1.0;
-    const MAX_REVERSE = -0.3;
-    const STEER_SPEED = 0.015;    // Less sensitive steering (was 0.03)
+    const ACCEL = 0.007;           // Slower acceleration
+    const BRAKE = 0.035;           // More sensitive, responsive brakes
+    const REVERSE_ACCEL = 0.005;   // Slower reverse acceleration
+    const FRICTION = 0.985;        // Coasting deceleration
+    const MAX_SPEED = 1.3;
+    const MAX_REVERSE = -0.35;
+    
+    const BASE_STEER = 0.012;      // Smooth initial turn entry
+    const MAX_STEER = 0.032;       // Maximum gradual turn tightness
 
-    // Control Inputs
     const keys = { forward: false, backward: false, left: false, right: false };
 
     window.addEventListener('keydown', (e) => {
@@ -185,7 +211,7 @@
       if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') keys.forward = false;
       if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.backward = false;
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.left = false;
-      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.right = false;
+      if (e.key === 'd' || e.key === 'ArrowRight') keys.right = false;
     });
 
     window.addEventListener('resize', () => {
@@ -198,58 +224,63 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      // 1. Acceleration, Sensitive Braking, and Reverse Logic
+      // 1. Acceleration & Sensitive Braking
       if (keys.forward) {
         if (speed < 0) {
-          speed = Math.min(0, speed + BRAKE); // Apply strong braking when moving backward
+          speed += BRAKE; // Applying brake while in reverse
         } else {
-          speed = Math.min(speed + ACCEL, MAX_SPEED); // Gradual forward acceleration
+          speed = Math.min(speed + ACCEL, MAX_SPEED);
         }
       } else if (keys.backward) {
         if (speed > 0) {
-          speed = Math.max(0, speed - BRAKE); // Apply strong braking when moving forward
+          speed -= BRAKE; // Sensitive brake when pressing S/Down while moving forward
         } else {
-          speed = Math.max(speed - REVERSE_ACCEL, MAX_REVERSE); // Reverse acceleration
+          speed = Math.max(speed - REVERSE_ACCEL, MAX_REVERSE);
         }
       } else {
-        speed *= FRICTION; // Natural coasting slowdown
+        speed *= FRICTION;
       }
 
-      // Stop tiny decimal movement drift
-      if (Math.abs(speed) < 0.0005) speed = 0;
+      if (Math.abs(speed) < 0.001) speed = 0;
 
-      // 2. Smoother, Less Sensitive Steering Physics
-      if (keys.left) {
-        steeringAngle = Math.min(steeringAngle + STEER_SPEED, 0.025);
-      } else if (keys.right) {
-        steeringAngle = Math.max(steeringAngle - STEER_SPEED, -0.025);
+      // 2. Smooth Ramp-In Steering Logic
+      if (keys.left || keys.right) {
+        steerHoldTime = Math.min(steerHoldTime + 0.02, 1.0); // Smoothly ramp up hold factor
+        const currentSteerRate = BASE_STEER + (MAX_STEER - BASE_STEER) * steerHoldTime;
+
+        if (keys.left) {
+          steeringAngle = Math.min(steeringAngle + 0.005, currentSteerRate);
+        } else if (keys.right) {
+          steeringAngle = Math.max(steeringAngle - 0.005, -currentSteerRate);
+        }
       } else {
-        steeringAngle *= 0.75; // Auto-center wheel when keys released
+        steerHoldTime = 0;
+        steeringAngle *= 0.75; // Quickly smooth back to center when released
       }
 
-      // Steering angle applies relative to current movement direction
-      if (Math.abs(speed) > 0.002) {
+      // Vehicle turning strictly proportional to forward/reverse movement
+      if (Math.abs(speed) > 0.005) {
         const turnDirection = speed >= 0 ? 1 : -1;
         carGroup.rotation.y += steeringAngle * turnDirection * (Math.abs(speed) / MAX_SPEED);
       }
 
-      // 3. Position Updates
+      // 3. Move Car Position
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
-      // 4. Infinite Grass Following Logic
+      // 4. Lock Grass Terrain Under Car (Fixes grass disappearing)
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;
 
-      // 5. 3rd-Person Follow Camera
-      const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+      // 5. Camera Tracking
+      const cameraOffset = new THREE.Vector3(0, 3.5, 8.5).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      // 6. UI Speedometer
-      const mph = Math.round(Math.abs(speed) * 80);
+      // 6. UI Update
+      const mph = Math.round(Math.abs(speed) * 75);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 
       renderer.render(scene, camera);

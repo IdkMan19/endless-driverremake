@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Physics Driving Simulator with AI Traffic</title>
+  <title>Physics Driving Simulator with Manual Transmission</title>
   <style>
     body {
       margin: 0;
@@ -20,19 +20,26 @@
       pointer-events: none;
     }
     #speedometer {
-      font-size: 20px;
+      font-size: 22px;
       font-weight: bold;
       color: #00ffcc;
       margin-top: 5px;
+    }
+    #gear-display {
+      font-size: 20px;
+      font-weight: bold;
+      color: #ffcc00;
+      margin-top: 3px;
     }
   </style>
 </head>
 <body>
   <div id="ui">
     <h1 style="margin:0; font-size: 24px;">Physics Driving Simulator</h1>
-    <p style="margin:5px 0 0 0;"><b>W / Up</b> = Accelerate | <b>S / Down</b> = Brake / Reverse</p>
-    <p style="margin:2px 0 0 0;"><b>A / D</b> or <b>Left / Right</b> = Steer</p>
+    <p style="margin:5px 0 0 0;"><b>W / Up</b> = Throttle | <b>S / Down</b> = Brake / Reverse</p>
+    <p style="margin:2px 0 0 0;"><b>A / D</b> = Steer | <b>Shift</b> = Clutch | <b>Spacebar</b> = Shift Gear</p>
     <div id="speedometer">0 MPH</div>
+    <div id="gear-display">GEAR: 1</div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -209,12 +216,10 @@
       const mesh = createCarMesh(color);
       scene.add(mesh);
 
-      // Distribute cars along curve path
       const progress = (i / NUM_AI_CARS) + 0.05;
-      const laneSide = i % 2 === 0 ? 1 : -1; // 1 = Right Lane, -1 = Left Lane
+      const laneSide = i % 2 === 0 ? 1 : -1;
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
 
-      // Speed reduced to 20% of original value (0.0008 * 0.2 = 0.00016)
       const baseSpeed = (0.0008 + Math.random() * 0.0004) * 0.2;
 
       aiCars.push({
@@ -227,27 +232,44 @@
       });
     }
 
-    // --- Driving Physics Parameters ---
+    // --- Driving Physics & Manual Gear System Parameters ---
     let speed = 0;
     let steeringInputPower = 0;
-    
-    const ACCEL = 0.007;
+    let currentGear = 1;
+
+    // Gear properties: [accelPower, maxSpeedCap]
+    const gearRatios = {
+      1: { accel: 0.012, maxSpeed: 0.35 },
+      2: { accel: 0.009, maxSpeed: 0.60 },
+      3: { accel: 0.007, maxSpeed: 0.85 },
+      4: { accel: 0.005, maxSpeed: 1.10 },
+      5: { accel: 0.003, maxSpeed: 1.35 }
+    };
+
     const BRAKE_POWER = 0.035;
     const REVERSE_ACCEL = 0.005;
     const FRICTION = 0.985;
-    const MAX_SPEED = 1.2;
     const MAX_REVERSE = -0.35;
     
     const STEER_RAMP_SPEED = 0.015;
     const MAX_STEER_ANGLE = 0.035;
 
-    const keys = { forward: false, backward: false, left: false, right: false };
+    const keys = { forward: false, backward: false, left: false, right: false, clutch: false };
 
     window.addEventListener('keydown', (e) => {
       if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') keys.forward = true;
       if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.backward = true;
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.left = true;
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.right = true;
+      if (e.key === 'Shift') keys.clutch = true;
+
+      // Shift Gear with Spacebar (requires Clutch holding)
+      if (e.code === 'Space') {
+        if (keys.clutch) {
+          currentGear = (currentGear % 5) + 1;
+          document.getElementById('gear-display').innerText = `GEAR: ${currentGear}`;
+        }
+      }
     });
 
     window.addEventListener('keyup', (e) => {
@@ -255,6 +277,7 @@
       if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.backward = false;
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.left = false;
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.right = false;
+      if (e.key === 'Shift') keys.clutch = false;
     });
 
     window.addEventListener('resize', () => {
@@ -267,12 +290,15 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      // Acceleration & Braking
+      const activeGear = gearRatios[currentGear];
+
+      // Acceleration, Clutch, and Braking Physics
       if (keys.forward) {
         if (speed < 0) {
           speed += BRAKE_POWER;
-        } else {
-          speed = Math.min(speed + ACCEL, MAX_SPEED);
+        } else if (!keys.clutch) {
+          // Accelerate only when clutch is NOT pressed
+          speed = Math.min(speed + activeGear.accel, activeGear.maxSpeed);
         }
       } else if (keys.backward) {
         if (speed > 0) {
@@ -286,7 +312,7 @@
 
       if (Math.abs(speed) < 0.001) speed = 0;
 
-      // Steering
+      // Steering Logic
       if (keys.left) {
         steeringInputPower = Math.min(steeringInputPower + STEER_RAMP_SPEED, 1.0);
       } else if (keys.right) {
@@ -298,7 +324,7 @@
       if (Math.abs(speed) > 0.005) {
         const turnDirection = speed >= 0 ? 1 : -1;
         const currentTurnRate = steeringInputPower * MAX_STEER_ANGLE;
-        carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / MAX_SPEED);
+        carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / 1.35);
       }
 
       // Movement
@@ -340,7 +366,7 @@
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      // UI
+      // UI Updates
       const mph = Math.round(Math.abs(speed) * 80);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 

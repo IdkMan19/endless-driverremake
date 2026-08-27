@@ -41,7 +41,7 @@
     // --- Scene Setup ---
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb); // Daylight sky color
-    scene.fog = new THREE.FogExp2(0x87ceeb, 0.005);
+    scene.fog = new THREE.FogExp2(0x87ceeb, 0.003);
 
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -56,8 +56,8 @@
     dirLight.position.set(50, 100, 50);
     scene.add(dirLight);
 
-    // --- Ground Terrain (Grass) ---
-    const grassGeo = new THREE.PlaneGeometry(2000, 2000);
+    // --- Infinite Ground Terrain (Grass) ---
+    const grassGeo = new THREE.PlaneGeometry(3000, 3000);
     const grassMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
     const grass = new THREE.Mesh(grassGeo, grassMat);
     grass.rotation.x = -Math.PI / 2;
@@ -162,12 +162,14 @@
     let speed = 0;
     let steeringAngle = 0;
     
-    const ACCEL = 0.015;
-    const REVERSE_ACCEL = 0.008;
-    const FRICTION = 0.98;
-    const MAX_SPEED = 1.2;
-    const MAX_REVERSE = -0.4;
-    const STEER_SPEED = 0.03;
+    // Adjusted Tuning Parameters
+    const ACCEL = 0.007;          // Slower acceleration (was 0.015)
+    const BRAKE = 0.025;          // Sensitive brakes
+    const REVERSE_ACCEL = 0.005;  // Reverse speed buildup
+    const FRICTION = 0.985;       // Natural coasting drag
+    const MAX_SPEED = 1.0;
+    const MAX_REVERSE = -0.3;
+    const STEER_SPEED = 0.015;    // Less sensitive steering (was 0.03)
 
     // Control Inputs
     const keys = { forward: false, backward: false, left: false, right: false };
@@ -196,46 +198,57 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      // 1. Handle Acceleration & Braking/Reverse
+      // 1. Acceleration, Sensitive Braking, and Reverse Logic
       if (keys.forward) {
-        speed = Math.min(speed + ACCEL, MAX_SPEED);
+        if (speed < 0) {
+          speed = Math.min(0, speed + BRAKE); // Apply strong braking when moving backward
+        } else {
+          speed = Math.min(speed + ACCEL, MAX_SPEED); // Gradual forward acceleration
+        }
       } else if (keys.backward) {
-        speed = Math.max(speed - REVERSE_ACCEL, MAX_REVERSE);
+        if (speed > 0) {
+          speed = Math.max(0, speed - BRAKE); // Apply strong braking when moving forward
+        } else {
+          speed = Math.max(speed - REVERSE_ACCEL, MAX_REVERSE); // Reverse acceleration
+        }
       } else {
         speed *= FRICTION; // Natural coasting slowdown
       }
 
-      // Stop minuscule movements when resting
-      if (Math.abs(speed) < 0.001) speed = 0;
+      // Stop tiny decimal movement drift
+      if (Math.abs(speed) < 0.0005) speed = 0;
 
-      // 2. Realistic Steering Physics Logic
+      // 2. Smoother, Less Sensitive Steering Physics
       if (keys.left) {
-        steeringAngle = Math.min(steeringAngle + STEER_SPEED, 0.04);
+        steeringAngle = Math.min(steeringAngle + STEER_SPEED, 0.025);
       } else if (keys.right) {
-        steeringAngle = Math.max(steeringAngle - STEER_SPEED, -0.04);
+        steeringAngle = Math.max(steeringAngle - STEER_SPEED, -0.025);
       } else {
-        steeringAngle *= 0.8; // Auto-center wheel when key released
+        steeringAngle *= 0.75; // Auto-center wheel when keys released
       }
 
-      // Car only turns proportional to its speed (Wheel physics)
-      if (Math.abs(speed) > 0.005) {
-        // Reverse inverts turn direction relative to forward rotation
+      // Steering angle applies relative to current movement direction
+      if (Math.abs(speed) > 0.002) {
         const turnDirection = speed >= 0 ? 1 : -1;
         carGroup.rotation.y += steeringAngle * turnDirection * (Math.abs(speed) / MAX_SPEED);
       }
 
-      // 3. Update Car Position based on angle
+      // 3. Position Updates
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
-      // 4. Update 3rd Person Follow Camera
+      // 4. Infinite Grass Following Logic
+      grass.position.x = carGroup.position.x;
+      grass.position.z = carGroup.position.z;
+
+      // 5. 3rd-Person Follow Camera
       const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      // 5. Update Speedometer UI
+      // 6. UI Speedometer
       const mph = Math.round(Math.abs(speed) * 80);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 

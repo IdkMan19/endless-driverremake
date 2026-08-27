@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Physics Driving Simulator - Advanced Destruction</title>
+  <title>Physics Driving Simulator - High Speed Destruction</title>
   <style>
     body {
       margin: 0;
@@ -63,7 +63,7 @@
     // --- Scene Setup ---
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
-    scene.fog = new THREE.FogExp2(0x87ceeb, 0.0025);
+    scene.fog = new THREE.FogExp2(0x87ceeb, 0.003);
 
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -78,15 +78,16 @@
     dirLight.position.set(50, 100, 50);
     scene.add(dirLight);
 
-    // --- Floor / Environment ---
+    // --- Floor Hitbox Plane & Grass ---
+    const GROUND_Y = 0.0;
     const grassGeo = new THREE.PlaneGeometry(3000, 3000);
     const grassMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
     const grass = new THREE.Mesh(grassGeo, grassMat);
     grass.rotation.x = -Math.PI / 2;
-    grass.position.y = 0;
+    grass.position.y = GROUND_Y - 0.02;
     scene.add(grass);
 
-    // --- Road Generator ---
+    // --- Road Construction ---
     const ROAD_WIDTH = 18;
     const NUM_POINTS = 300;
     const pathPoints = [];
@@ -99,7 +100,7 @@
       const wave = Math.sin(angle * 5) * 40 + Math.cos(angle * 3) * 30;
       const x = Math.cos(angle) * (radiusX + wave);
       const z = Math.sin(angle) * (radiusZ + wave);
-      pathPoints.push(new THREE.Vector3(x, 0, z));
+      pathPoints.push(new THREE.Vector3(x, GROUND_Y, z));
     }
 
     const roadCurve = new THREE.CatmullRomCurve3(pathPoints, true);
@@ -116,8 +117,8 @@
       const leftPt = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2);
       const rightPt = pt.clone().addScaledVector(normal, -ROAD_WIDTH / 2);
 
-      roadVertices.push(leftPt.x, 0.01, leftPt.z);
-      roadVertices.push(rightPt.x, 0.01, rightPt.z);
+      roadVertices.push(leftPt.x, GROUND_Y + 0.01, leftPt.z);
+      roadVertices.push(rightPt.x, GROUND_Y + 0.01, rightPt.z);
 
       if (i < curvePoints.length - 1) {
         const base = i * 2;
@@ -138,7 +139,7 @@
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
     scene.add(roadMesh);
 
-    // Road Markings & Props
+    // --- Markings & Trees ---
     const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00, side: THREE.DoubleSide });
     const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
 
@@ -155,40 +156,70 @@
 
       if (i % 3 === 0) {
         const centerDash = new THREE.Mesh(dashGeo, lineMatYellow);
-        centerDash.position.set(pt.x, 0.02, pt.z);
-        centerDash.lookAt(nextPt.x, 0.02, nextPt.z);
+        centerDash.position.set(pt.x, GROUND_Y + 0.02, pt.z);
+        centerDash.lookAt(nextPt.x, GROUND_Y + 0.02, nextPt.z);
         scene.add(centerDash);
       }
 
       const leftPos = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       const leftNext = nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       const leftEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
-      leftEdge.position.set(leftPos.x, 0.02, leftPos.z);
-      leftEdge.lookAt(leftNext.x, 0.02, leftNext.z);
+      leftEdge.position.set(leftPos.x, GROUND_Y + 0.02, leftPos.z);
+      leftEdge.lookAt(leftNext.x, GROUND_Y + 0.02, leftNext.z);
       scene.add(leftEdge);
 
       const rightPos = pt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
       const rightNext = nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
       const rightEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
-      rightEdge.position.set(rightPos.x, 0.02, rightPos.z);
-      rightEdge.lookAt(rightNext.x, 0.02, rightNext.z);
+      rightEdge.position.set(rightPos.x, GROUND_Y + 0.02, rightPos.z);
+      rightEdge.lookAt(rightNext.x, GROUND_Y + 0.02, rightNext.z);
       scene.add(rightEdge);
     }
 
-    // --- Advanced Particle Engine (Sparks, Fire, Smoke, Shrapnel) ---
-    const MAX_PARTICLES = 600;
+    const treeGeo = new THREE.ConeGeometry(2.5, 7, 5);
+    const treeMat = new THREE.MeshLambertMaterial({ color: 0x1b5e20 });
+
+    for (let i = 0; i < curvePoints.length; i += 4) {
+      const pt = curvePoints[i];
+      const tangent = roadCurve.getTangentAt(i / curvePoints.length);
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+      const treeL = new THREE.Mesh(treeGeo, treeMat);
+      treeL.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 + 6 + Math.random() * 18);
+      treeL.position.y = GROUND_Y + 3.5;
+      scene.add(treeL);
+
+      const treeR = new THREE.Mesh(treeGeo, treeMat);
+      treeR.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 + 6 + Math.random() * 18));
+      treeR.position.y = GROUND_Y + 3.5;
+      scene.add(treeR);
+    }
+
+    // --- Particle Pool: Friction Sparks & Fire Explosion ---
+    const MAX_PARTICLES = 300;
     const particleGeo = new THREE.BufferGeometry();
-    const particlePos = new Float32Array(MAX_PARTICLES * 3);
-    const particleCol = new Float32Array(MAX_PARTICLES * 3);
+    const particlePositions = new Float32Array(MAX_PARTICLES * 3);
+    const particleColors = new Float32Array(MAX_PARTICLES * 3);
     const particleData = [];
 
     for (let i = 0; i < MAX_PARTICLES; i++) {
-      particlePos[i * 3 + 1] = -500;
-      particleData.push({ vel: new THREE.Vector3(), life: 0, maxLife: 1, type: 'spark' });
+      particlePositions[i * 3] = 0;
+      particlePositions[i * 3 + 1] = -100;
+      particlePositions[i * 3 + 2] = 0;
+      particleColors[i * 3] = 1;
+      particleColors[i * 3 + 1] = 0.8;
+      particleColors[i * 3 + 2] = 0.2;
+
+      particleData.push({
+        velocity: new THREE.Vector3(),
+        life: 0,
+        maxLife: 1,
+        type: 'spark'
+      });
     }
 
-    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
-    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleCol, 3));
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
 
     const particleMat = new THREE.PointsMaterial({
       size: 0.45,
@@ -196,211 +227,116 @@
       transparent: true,
       opacity: 0.95
     });
-
     const particleSystem = new THREE.Points(particleGeo, particleMat);
     scene.add(particleSystem);
 
-    function spawnParticles(pos, count, type) {
-      const positions = particleSystem.geometry.attributes.position.array;
-      const colors = particleSystem.geometry.attributes.color.array;
+    function spawnSparks(origin, count) {
+      const pos = particleGeo.attributes.position.array;
+      const col = particleGeo.attributes.color.array;
 
       for (let i = 0; i < count; i++) {
         const idx = Math.floor(Math.random() * MAX_PARTICLES);
-        positions[idx * 3] = pos.x + (Math.random() - 0.5) * 0.5;
-        positions[idx * 3 + 1] = pos.y + (Math.random() - 0.5) * 0.5;
-        positions[idx * 3 + 2] = pos.z + (Math.random() - 0.5) * 0.5;
-
         const p = particleData[idx];
-        p.type = type;
 
-        if (type === 'spark') {
-          p.vel.set((Math.random() - 0.5) * 1.5, Math.random() * 1.2 + 0.3, (Math.random() - 0.5) * 1.5);
-          p.life = 0;
-          p.maxLife = 20 + Math.random() * 15;
-          colors[idx * 3] = 1.0; colors[idx * 3 + 1] = 0.8; colors[idx * 3 + 2] = 0.2;
-        } else if (type === 'fire') {
-          p.vel.set((Math.random() - 0.5) * 0.4, Math.random() * 0.8 + 0.4, (Math.random() - 0.5) * 0.4);
-          p.life = 0;
-          p.maxLife = 35 + Math.random() * 20;
-          colors[idx * 3] = 1.0; colors[idx * 3 + 1] = 0.2 + Math.random() * 0.3; colors[idx * 3 + 2] = 0.0;
-        } else if (type === 'explosion') {
-          p.vel.set((Math.random() - 0.5) * 3.5, Math.random() * 2.5 + 0.5, (Math.random() - 0.5) * 3.5);
-          p.life = 0;
-          p.maxLife = 40 + Math.random() * 25;
-          colors[idx * 3] = 1.0; colors[idx * 3 + 1] = 0.4; colors[idx * 3 + 2] = 0.0;
-        }
+        pos[idx * 3] = origin.x + (Math.random() - 0.5) * 0.5;
+        pos[idx * 3 + 1] = origin.y + (Math.random() - 0.5) * 0.5;
+        pos[idx * 3 + 2] = origin.z + (Math.random() - 0.5) * 0.5;
+
+        col[idx * 3] = 1.0;
+        col[idx * 3 + 1] = 0.7 + Math.random() * 0.3;
+        col[idx * 3 + 2] = 0.1;
+
+        p.velocity.set(
+          (Math.random() - 0.5) * 1.5,
+          Math.random() * 1.2 + 0.3,
+          (Math.random() - 0.5) * 1.5
+        );
+        p.life = 0;
+        p.maxLife = 20 + Math.random() * 15;
+        p.type = 'spark';
       }
-      particleSystem.geometry.attributes.position.needsUpdate = true;
-      particleSystem.geometry.attributes.color.needsUpdate = true;
+      particleGeo.attributes.position.needsUpdate = true;
+      particleGeo.attributes.color.needsUpdate = true;
+    }
+
+    function spawnExplosion(origin, forceRadius) {
+      const pos = particleGeo.attributes.position.array;
+      const col = particleGeo.attributes.color.array;
+
+      for (let i = 0; i < 120; i++) {
+        const idx = Math.floor(Math.random() * MAX_PARTICLES);
+        const p = particleData[idx];
+
+        pos[idx * 3] = origin.x;
+        pos[idx * 3 + 1] = origin.y + 0.5;
+        pos[idx * 3 + 2] = origin.z;
+
+        const isFire = Math.random() > 0.3;
+        col[idx * 3] = 1.0;
+        col[idx * 3 + 1] = isFire ? Math.random() * 0.5 : 0.2;
+        col[idx * 3 + 2] = 0.0;
+
+        p.velocity.set(
+          (Math.random() - 0.5) * forceRadius * 1.8,
+          Math.random() * forceRadius * 1.2 + 0.5,
+          (Math.random() - 0.5) * forceRadius * 1.8
+        );
+        p.life = 0;
+        p.maxLife = 35 + Math.random() * 25;
+        p.type = 'fire';
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+      particleGeo.attributes.color.needsUpdate = true;
     }
 
     function updateParticles() {
-      const positions = particleSystem.geometry.attributes.position.array;
-      const colors = particleSystem.geometry.attributes.color.array;
+      const pos = particleGeo.attributes.position.array;
+      const col = particleGeo.attributes.color.array;
 
       for (let i = 0; i < MAX_PARTICLES; i++) {
         const p = particleData[i];
-        if (positions[i * 3 + 1] > -100) {
+        if (p.life < p.maxLife) {
           p.life++;
-          positions[i * 3] += p.vel.x;
-          positions[i * 3 + 1] += p.vel.y;
-          positions[i * 3 + 2] += p.vel.z;
+          pos[i * 3] += p.velocity.x;
+          pos[i * 3 + 1] += p.velocity.y;
+          pos[i * 3 + 2] += p.velocity.z;
 
           if (p.type === 'spark') {
-            p.vel.y -= 0.04; // Gravity
-            if (positions[i * 3 + 1] <= 0.02) {
-              positions[i * 3 + 1] = 0.02;
-              p.vel.y = -p.vel.y * 0.3;
-            }
-          } else if (p.type === 'fire') {
-            colors[i * 3] *= 0.96;
-            colors[i * 3 + 1] *= 0.92;
+            p.velocity.y -= 0.05; // Gravity
+            p.velocity.multiplyScalar(0.96);
+          } else {
+            p.velocity.y += 0.01; // Thermal rise for fire
+            p.velocity.multiplyScalar(0.92);
+            col[i * 3 + 1] *= 0.95; // Turn redder over time
           }
 
-          if (p.life >= p.maxLife) {
-            positions[i * 3 + 1] = -500;
+          if (pos[i * 3 + 1] <= GROUND_Y + 0.05) {
+            pos[i * 3 + 1] = GROUND_Y + 0.05;
+            p.velocity.set(0, 0, 0);
           }
+        } else {
+          pos[i * 3 + 1] = -100;
         }
       }
-      particleSystem.geometry.attributes.position.needsUpdate = true;
-      particleSystem.geometry.attributes.color.needsUpdate = true;
+      particleGeo.attributes.position.needsUpdate = true;
+      particleGeo.attributes.color.needsUpdate = true;
     }
 
-    // --- Modular Vehicle Builder with Detachable Parts ---
-    function createModularCar(colorHex) {
-      const carGroup = new THREE.Group();
-      const bodyGroup = new THREE.Group();
-      carGroup.add(bodyGroup);
-
-      const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
-      const darkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-      const bumperMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-      const glassMat = new THREE.MeshPhongMaterial({ color: 0x223344, shininess: 80, transparent: true, opacity: 0.85 });
-      const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
-      const taillightIdleMat = new THREE.MeshBasicMaterial({ color: 0x550000 });
-      const brakeLightActiveMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-      
-      const signalMatLeft = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
-      const signalMatRight = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
-
-      // Main Chassis Mesh (Deformable)
-      const bodyGeo = new THREE.BoxGeometry(2, 0.7, 4, 4, 2, 6);
-      const chassis = new THREE.Mesh(bodyGeo, carBodyMat);
-      chassis.position.y = 0.55;
-      bodyGroup.add(chassis);
-
-      // Glass Cabin
-      const cabinGeo = new THREE.BoxGeometry(1.65, 0.6, 2.1, 2, 2, 2);
-      const cabin = new THREE.Mesh(cabinGeo, glassMat);
-      cabin.position.set(0, 1.15, -0.1);
-      bodyGroup.add(cabin);
-
-      // Detachable Modular Components
-      const detachableParts = [];
-
-      function createDetachablePart(geo, mat, pos, name) {
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.copy(pos);
-        bodyGroup.add(mesh);
-        detachableParts.push({ mesh: mesh, localPos: pos.clone(), attached: true, name: name });
-        return mesh;
-      }
-
-      // Hood
-      const hoodGeo = new THREE.BoxGeometry(1.7, 0.08, 1.3);
-      createDetachablePart(hoodGeo, carBodyMat, new THREE.Vector3(0, 0.92, -1.25), 'hood');
-
-      // Bumpers
-      const frontBumper = createDetachablePart(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat, new THREE.Vector3(0, 0.35, -2.05), 'bumper_F');
-      const rearBumper = createDetachablePart(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat, new THREE.Vector3(0, 0.35, 2.05), 'bumper_R');
-
-      // Headlights & Taillights
-      const headlightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
-      createDetachablePart(headlightGeo, headlightMat, new THREE.Vector3(-0.65, 0.65, -2.02), 'headlight_L');
-      createDetachablePart(headlightGeo, headlightMat, new THREE.Vector3(0.65, 0.65, -2.02), 'headlight_R');
-
-      const taillightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
-      const taillightL = createDetachablePart(taillightGeo, taillightIdleMat, new THREE.Vector3(-0.65, 0.65, 2.02), 'taillight_L');
-      const taillightR = createDetachablePart(taillightGeo, taillightIdleMat, new THREE.Vector3(0.65, 0.65, 2.02), 'taillight_R');
-
-      // Signals
-      const signalGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
-      createDetachablePart(signalGeo, signalMatLeft, new THREE.Vector3(-0.92, 0.65, -2.02), 'sig_FL');
-      createDetachablePart(signalGeo, signalMatLeft, new THREE.Vector3(-0.92, 0.65, 2.02), 'sig_RL');
-      createDetachablePart(signalGeo, signalMatRight, new THREE.Vector3(0.92, 0.65, -2.02), 'sig_FR');
-      createDetachablePart(signalGeo, signalMatRight, new THREE.Vector3(0.92, 0.65, 2.02), 'sig_RR');
-
-      // Wheels Assemblies
-      const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
-      wheelGeo.rotateZ(Math.PI / 2);
-      const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.32, 12);
-      rimGeo.rotateZ(Math.PI / 2);
-      const rimMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
-
-      function buildWheel() {
-        const pivot = new THREE.Group();
-        pivot.add(new THREE.Mesh(wheelGeo, darkMat));
-        pivot.add(new THREE.Mesh(rimGeo, rimMat));
-        return pivot;
-      }
-
-      const frontPivots = [];
-      const wheelPositions = [
-        { pos: new THREE.Vector3(-1.05, 0.4, -1.2), isFront: true, name: 'wheel_FL' },
-        { pos: new THREE.Vector3(1.05, 0.4, -1.2), isFront: true, name: 'wheel_FR' },
-        { pos: new THREE.Vector3(-1.05, 0.4, 1.2), isFront: false, name: 'wheel_RL' },
-        { pos: new THREE.Vector3(1.05, 0.4, 1.2), isFront: false, name: 'wheel_RR' }
-      ];
-
-      wheelPositions.forEach(w => {
-        const pivot = buildWheel();
-        pivot.position.copy(w.pos);
-        bodyGroup.add(pivot);
-        if (w.isFront) frontPivots.push(pivot);
-        detachableParts.push({ mesh: pivot, localPos: w.pos.clone(), attached: true, name: w.name });
-      });
-
-      return {
-        root: carGroup,
-        bodyGroup: bodyGroup,
-        chassis: chassis,
-        cabin: cabin,
-        frontPivots: frontPivots,
-        detachableParts: detachableParts,
-        brakeLights: [taillightL, taillightR],
-        idleMat: taillightIdleMat,
-        activeMat: brakeLightActiveMat,
-        signalMatLeft: signalMatLeft,
-        signalMatRight: signalMatRight
-      };
-    }
-
-    // --- Detached Debris Manager ---
+    // --- Debris Management System ---
     const activeDebris = [];
 
-    function detachPart(carObj, part, impactForce) {
-      if (!part.attached) return;
-      part.attached = false;
-
-      // Unparent from car, add directly to scene physics
-      carObj.meshData.bodyGroup.remove(part.mesh);
-      scene.add(part.mesh);
-
-      // Align matrix to world space
-      part.mesh.position.copy(carObj.meshData.bodyGroup.localToWorld(part.localPos.clone()));
-      part.mesh.quaternion.copy(carObj.mesh.quaternion);
-
-      // Inherit velocity plus impact shrapnel scatter
-      const scatterVel = new THREE.Vector3(
-        (Math.random() - 0.5) * impactForce * 1.5,
-        Math.random() * impactForce * 0.8 + 0.2,
-        (Math.random() - 0.5) * impactForce * 1.5
-      );
+    function spawnDebrisPanel(position, velocity, colorHex) {
+      const geo = new THREE.BoxGeometry(0.6 + Math.random() * 0.4, 0.08, 0.8 + Math.random() * 0.5);
+      const mat = new THREE.MeshLambertMaterial({ color: colorHex });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(position);
+      scene.add(mesh);
 
       activeDebris.push({
-        mesh: part.mesh,
-        velocity: carObj.velocity.clone().add(scatterVel),
-        angularVel: new THREE.Vector3(Math.random() * 0.3, Math.random() * 0.3, Math.random() * 0.3)
+        mesh: mesh,
+        velocity: velocity.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, Math.random() * 0.4 + 0.2, (Math.random() - 0.5) * 0.3)),
+        angularVel: new THREE.Vector3((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3),
+        life: 0
       });
     }
 
@@ -412,53 +348,211 @@
         d.mesh.rotation.y += d.angularVel.y;
         d.mesh.rotation.z += d.angularVel.z;
 
-        // Ground check
-        if (d.mesh.position.y <= 0.1) {
-          d.mesh.position.y = 0.1;
-          d.velocity.set(0, 0, 0);
-          d.angularVel.set(0, 0, 0);
+        if (d.mesh.position.y > GROUND_Y + 0.1) {
+          d.velocity.y -= 0.02; // Gravity
         } else {
-          d.velocity.y -= 0.015; // Gravity
+          d.mesh.position.y = GROUND_Y + 0.05;
+          d.velocity.multiplyScalar(0.7);
+          d.angularVel.multiplyScalar(0.7);
+        }
+
+        d.life++;
+        if (d.life > 400) {
+          scene.remove(d.mesh);
+          d.mesh.geometry.dispose();
+          d.mesh.material.dispose();
+          activeDebris.splice(i, 1);
         }
       }
     }
 
-    // --- Entity Creation ---
-    function createPhysicsVehicle(colorHex, isPlayer = false) {
-      const meshData = createModularCar(colorHex);
+    // --- Car Mesh Construction with Breakable Parts ---
+    function createCarMesh(colorHex) {
+      const carGroup = new THREE.Group();
+      const visualBody = new THREE.Group();
+      carGroup.add(visualBody);
+
+      const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
+      const darkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+      const bumperMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+      const glassMat = new THREE.MeshPhongMaterial({ color: 0x223344, shininess: 80, transparent: true, opacity: 0.85 });
+      const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+      const taillightIdleMat = new THREE.MeshBasicMaterial({ color: 0x550000 });
+      const brakeLightActiveMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+      const signalMatLeft = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
+      const signalMatRight = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
+
+      // Body Parts tracked separately for destruction/deformation
+      const carBodyGeo = new THREE.BoxGeometry(2, 0.7, 4);
+      const carBody = new THREE.Mesh(carBodyGeo, carBodyMat);
+      carBody.position.y = 0.55;
+      visualBody.add(carBody);
+
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.6, 2.1), glassMat);
+      cabin.position.set(0, 1.15, -0.1);
+      visualBody.add(cabin);
+
+      const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat);
+      frontBumper.position.set(0, 0.35, -2.05);
+      visualBody.add(frontBumper);
+
+      const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat);
+      rearBumper.position.set(0, 0.35, 2.05);
+      visualBody.add(rearBumper);
+
+      // Lights
+      const headlightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
+      const headlightL = new THREE.Mesh(headlightGeo, headlightMat);
+      headlightL.position.set(-0.65, 0.65, -2.02);
+      visualBody.add(headlightL);
+
+      const headlightR = new THREE.Mesh(headlightGeo, headlightMat);
+      headlightR.position.set(0.65, 0.65, -2.02);
+      visualBody.add(headlightR);
+
+      const taillightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
+      const taillightL = new THREE.Mesh(taillightGeo, taillightIdleMat);
+      taillightL.position.set(-0.65, 0.65, 2.02);
+      visualBody.add(taillightL);
+
+      const taillightR = new THREE.Mesh(taillightGeo, taillightIdleMat);
+      taillightR.position.set(0.65, 0.65, 2.02);
+      visualBody.add(taillightR);
+
+      const signalGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
+      const signalFL = new THREE.Mesh(signalGeo, signalMatLeft);
+      signalFL.position.set(-0.92, 0.65, -2.02);
+      visualBody.add(signalFL);
+
+      const signalFR = new THREE.Mesh(signalGeo, signalMatRight);
+      signalFR.position.set(0.92, 0.65, -2.02);
+      visualBody.add(signalFR);
+
+      // Wheels
+      const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
+      wheelGeo.rotateZ(Math.PI / 2);
+      const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.32, 12);
+      const rimMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+      rimGeo.rotateZ(Math.PI / 2);
+
+      function buildWheel() {
+        const pivot = new THREE.Group();
+        pivot.add(new THREE.Mesh(wheelGeo, darkMat));
+        pivot.add(new THREE.Mesh(rimGeo, rimMat));
+        return pivot;
+      }
+
+      const rearLeft = buildWheel(); rearLeft.position.set(-1.05, 0.4, 1.2); visualBody.add(rearLeft);
+      const rearRight = buildWheel(); rearRight.position.set(1.05, 0.4, 1.2); visualBody.add(rearRight);
+      const frontLeftPivot = buildWheel(); frontLeftPivot.position.set(-1.05, 0.4, -1.2); visualBody.add(frontLeftPivot);
+      const frontRightPivot = buildWheel(); frontRightPivot.position.set(1.05, 0.4, -1.2); visualBody.add(frontRightPivot);
+
       return {
-        meshData: meshData,
+        root: carGroup,
+        body: visualBody,
+        mainMesh: carBody,
+        frontBumper: frontBumper,
+        rearBumper: rearBumper,
+        colorHex: colorHex,
+        frontPivots: [frontLeftPivot, frontRightPivot],
+        brakeLights: [taillightL, taillightR],
+        idleMat: taillightIdleMat,
+        activeMat: brakeLightActiveMat,
+        signalMatLeft: signalMatLeft,
+        signalMatRight: signalMatRight
+      };
+    }
+
+    // --- Precise Oriented Bounding Box (OBB) Hitbox Structure ---
+    function getCarOBB(carMeshGroup) {
+      const pos = carMeshGroup.position;
+      const rotY = carMeshGroup.rotation.y;
+
+      const halfWidth = 1.05;
+      const halfLength = 2.15;
+
+      const dirZ = new THREE.Vector3(Math.sin(rotY), 0, Math.cos(rotY));
+      const dirX = new THREE.Vector3(Math.cos(rotY), 0, -Math.sin(rotY));
+
+      return {
+        center: pos.clone().add(new THREE.Vector3(0, 0.6, 0)),
+        halfWidth: halfWidth,
+        halfLength: halfLength,
+        dirX: dirX,
+        dirZ: dirZ
+      };
+    }
+
+    // Separating Axis Theorem (SAT) for 2D Oriented Boxes
+    function checkOBBCollision(obb1, obb2) {
+      const diff = new THREE.Vector3().subVectors(obb2.center, obb1.center);
+      diff.y = 0; // Ignore vertical height for box overlap math
+
+      const axes = [obb1.dirX, obb1.dirZ, obb2.dirX, obb2.dirZ];
+      let minOverlap = Infinity;
+      let smallestAxis = null;
+
+      for (let i = 0; i < axes.length; i++) {
+        const axis = axes[i];
+        const projDiff = Math.abs(diff.dot(axis));
+
+        const r1 = obb1.halfWidth * Math.abs(obb1.dirX.dot(axis)) + obb1.halfLength * Math.abs(obb1.dirZ.dot(axis));
+        const r2 = obb2.halfWidth * Math.abs(obb2.dirX.dot(axis)) + obb2.halfLength * Math.abs(obb2.dirZ.dot(axis));
+
+        const overlap = (r1 + r2) - projDiff;
+        if (overlap <= 0) return null; // Axis separates them; no collision
+
+        if (overlap < minOverlap) {
+          minOverlap = overlap;
+          smallestAxis = axis.clone();
+        }
+      }
+
+      if (diff.dot(smallestAxis) < 0) {
+        smallestAxis.negate();
+      }
+
+      return { overlap: minOverlap, normal: smallestAxis };
+    }
+
+    // --- Vehicle Physics Representation ---
+    function createPhysicsObject(meshData) {
+      return {
+        vehicle: meshData,
         mesh: meshData.root,
         velocity: new THREE.Vector3(),
         angularVelocity: new THREE.Vector3(),
         isAirborne: false,
-        isPlayer: isPlayer,
-        width: 2.1,
-        height: 1.4,
-        length: 4.2,
         health: 100,
-        onFire: false,
-        exploded: false,
-        fireTimer: 0
+        frontBumperAttached: true,
+        rearBumperAttached: true,
+        isDestroyed: false
       };
     }
 
-    const playerVehicle = createPhysicsVehicle(0xcc0000, true);
-    scene.add(playerVehicle.mesh);
+    // Player Setup
+    const playerVehicleMesh = createCarMesh(0xcc0000);
+    const playerPhysics = createPhysicsObject(playerVehicleMesh);
+    const carGroup = playerPhysics.mesh;
+    scene.add(carGroup);
 
     const startPos = roadCurve.getPointAt(0);
     const startTangent = roadCurve.getTangentAt(0);
-    playerVehicle.mesh.position.copy(startPos);
-    playerVehicle.mesh.lookAt(startPos.clone().add(startTangent));
+    carGroup.position.copy(startPos);
+    carGroup.position.y = GROUND_Y;
+    carGroup.lookAt(startPos.clone().add(startTangent));
 
-    // Traffic Setup
+    // AI Setup
     const aiCars = [];
     const trafficColors = [0x0055ff, 0xffaa00, 0x888888, 0x00aa44, 0x9900cc];
     const NUM_AI_CARS = 16;
 
     for (let i = 0; i < NUM_AI_CARS; i++) {
-      const ai = createPhysicsVehicle(trafficColors[i % trafficColors.length]);
-      scene.add(ai.mesh);
+      const color = trafficColors[i % trafficColors.length];
+      const vehicleMesh = createCarMesh(color);
+      const aiObj = createPhysicsObject(vehicleMesh);
+      scene.add(aiObj.mesh);
 
       const progress = (i / NUM_AI_CARS);
       const laneSide = i % 2 === 0 ? 1 : -1;
@@ -466,7 +560,7 @@
       const baseSpeed = (0.0004 + Math.random() * 0.0003) * 0.2;
 
       aiCars.push({
-        ...ai,
+        ...aiObj,
         progress: progress,
         targetSpeed: baseSpeed,
         currentSpeed: baseSpeed,
@@ -477,7 +571,7 @@
       });
     }
 
-    // --- Transmission & Input Handling ---
+    // --- Transmission & Controls ---
     const gearList = ['R', 'N', '1', '2', '3', '4', '5', '6', '7'];
     let currentGearIndex = 2;
 
@@ -503,6 +597,8 @@
 
     const BRAKE_POWER = 0.035;
     const FRICTION = 0.993;
+    const GRAVITY = -0.015;
+
     const keys = { w: false, s: false, a: false, d: false, shift: false };
 
     window.addEventListener('keydown', (e) => {
@@ -524,15 +620,13 @@
         document.getElementById('gear-display').innerText = `GEAR: ${newGear}`;
 
         if ((oldGear === '6' || oldGear === '7') && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 0.85) {
-          isSpinningOut = true;
-          spinoutTimer = 120;
-          document.getElementById('warning').style.display = 'block';
+          triggerSpinout();
         }
       }
 
       if (!keys.shift) {
         if (e.key === 'ArrowLeft') activeSignal = (activeSignal === 'LEFT') ? 'OFF' : 'LEFT';
-        if (e.key === 'ArrowRight') activeSignal = (activeSignal === 'RIGHT') ? 'OFF' : 'RIGHT';
+        else if (e.key === 'ArrowRight') activeSignal = (activeSignal === 'RIGHT') ? 'OFF' : 'RIGHT';
         document.getElementById('signals-display').innerText = `SIGNAL: ${activeSignal}`;
       }
     });
@@ -545,224 +639,189 @@
       if (e.key === 'Shift') keys.shift = false;
     });
 
+    function triggerSpinout() {
+      isSpinningOut = true;
+      spinoutTimer = 120;
+      document.getElementById('warning').style.display = 'block';
+    }
+
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // --- Mesh Vertex Deformation Engine ---
-    function deformMesh(mesh, impactPoint, impactForce) {
-      const positions = mesh.geometry.attributes.position;
-      const localImpact = mesh.worldToLocal(impactPoint.clone());
+    // --- Mesh Deformation Engine ---
+    function deformCarMesh(carVehicle, impactPointLocal, forceMagnitude) {
+      const positions = carVehicle.mainMesh.geometry.attributes.position;
+      const vertex = new THREE.Vector3();
 
       for (let i = 0; i < positions.count; i++) {
-        const v = new THREE.Vector3(positions.getX(i), positions.getY(i), positions.getZ(i));
-        const dist = v.distanceTo(localImpact);
+        vertex.fromBufferAttribute(positions, i);
+        const dist = vertex.distanceTo(impactPointLocal);
 
         if (dist < 1.8) {
-          const deformFactor = (1.8 - dist) * impactForce * 0.25;
-          const pushDir = v.clone().sub(localImpact).normalize();
-          v.addScaledVector(pushDir, deformFactor);
+          const deformFactor = (1.8 - dist) * forceMagnitude * 0.35;
+          const pushVector = vertex.clone().sub(impactPointLocal).normalize().multiplyScalar(deformFactor);
+          vertex.add(pushVector);
 
-          positions.setXYZ(i, v.x, v.y, v.z);
+          positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
         }
       }
       positions.needsUpdate = true;
-      mesh.geometry.computeVertexNormals();
+      carVehicle.mainMesh.geometry.computeVertexNormals();
     }
 
-    // --- Explosion Blastwave Mechanics ---
-    function triggerEngineExplosion(vehicle) {
-      if (vehicle.exploded) return;
-      vehicle.exploded = true;
-      vehicle.onFire = false;
+    // --- Ground Hitbox & Stabilized Rigidbody System ---
+    function updatePhysicsBody(body) {
+      body.mesh.position.add(body.velocity);
 
-      const engineWorldPos = vehicle.mesh.localToWorld(new THREE.Vector3(0, 0.6, -1.8));
-      spawnParticles(engineWorldPos, 120, 'explosion');
+      // Floor Hitbox Enforcement
+      if (body.mesh.position.y > GROUND_Y) {
+        body.velocity.y += GRAVITY;
+      }
 
-      // Detach front components instantly
-      vehicle.meshData.detachableParts.forEach(part => {
-        if (part.name.includes('hood') || part.name.includes('bumper_F') || part.name.includes('wheel_F')) {
-          detachPart(vehicle, part, 2.5);
-        }
-      });
+      if (body.mesh.position.y <= GROUND_Y) {
+        body.mesh.position.y = GROUND_Y;
+        body.velocity.y = 0; // Hard clamp ground plane to stop clipping/glitching
+        body.isAirborne = false;
 
-      // Blastwave impulse to nearby cars
-      const allVehicles = [playerVehicle, ...aiCars];
-      allVehicles.forEach(target => {
-        const dist = target.mesh.position.distanceTo(engineWorldPos);
-        if (dist < 12 && dist > 0.1) {
-          const blastForce = (12 - dist) * 0.12;
-          const blastDir = target.mesh.position.clone().sub(engineWorldPos).normalize();
+        // Ground Friction
+        body.velocity.x *= 0.88;
+        body.velocity.z *= 0.88;
 
-          target.velocity.addScaledVector(blastDir, blastForce);
-          target.velocity.y += blastForce * 0.5; // Slight vertical toss
-          target.angularVelocity.add(new THREE.Vector3((Math.random() - 0.5) * blastForce, (Math.random() - 0.5) * blastForce, (Math.random() - 0.5) * blastForce));
-
-          if (target.isPlayer) {
-            speed *= 0.2;
-            isSpinningOut = true;
-            spinoutTimer = 60;
-          } else {
-            target.inCrashPhysics = true;
-          }
-        }
-      });
-    }
-
-    // --- Sub-stepped Rigid Body Physics and Floor Hitbox Engine ---
-    function stepVehiclePhysics(v) {
-      // Apply linear velocity
-      v.mesh.position.add(v.velocity);
-
-      // Apply Rotations
-      v.mesh.rotation.x += v.angularVelocity.x;
-      v.mesh.rotation.y += v.angularVelocity.y;
-      v.mesh.rotation.z += v.angularVelocity.z;
-
-      // Floor Hitbox & Raycasting Constraint
-      if (v.mesh.position.y <= 0) {
-        v.mesh.position.y = 0; // Hard clamp ground plane
-        v.velocity.y = 0;
-        v.isAirborne = false;
-
-        // Friction dampening
-        v.velocity.x *= 0.92;
-        v.velocity.z *= 0.92;
-
-        // Restabilize rotations when grounded
-        v.angularVelocity.multiplyScalar(0.85);
-        v.mesh.rotation.x *= 0.8;
-        v.mesh.rotation.z *= 0.8;
+        // Rotational Stabilization
+        body.angularVelocity.multiplyScalar(0.75);
       } else {
-        v.velocity.y -= 0.003; // Smooth sub-stepped gravity
-        v.isAirborne = true;
-        // Suppress infinite flying up
-        v.velocity.y = Math.min(v.velocity.y, 0.4);
+        body.isAirborne = true;
       }
 
-      // Handle Engine Fire Logic
-      if (v.onFire && !v.exploded) {
-        v.fireTimer++;
-        const enginePos = v.mesh.localToWorld(new THREE.Vector3(0, 0.6, -1.8));
-        spawnParticles(enginePos, 3, 'fire');
+      // Smooth Angular Rotations without aggressive launches
+      body.mesh.rotation.x += body.angularVelocity.x;
+      body.mesh.rotation.y += body.angularVelocity.y;
+      body.mesh.rotation.z += body.angularVelocity.z;
 
-        if (v.fireTimer > 90 + Math.random() * 60) {
-          triggerEngineExplosion(v);
-        }
+      // Dampen pitch and roll near the ground to keep cars grounded
+      if (!body.isAirborne) {
+        body.mesh.rotation.x *= 0.8;
+        body.mesh.rotation.z *= 0.8;
       }
     }
 
-    // --- Exact OBB Overlap Collision Solver ---
-    function checkOBBCollision(v1, v2) {
-      const p1 = v1.mesh.position;
-      const p2 = v2.mesh.position;
-      const dx = p1.x - p2.x;
-      const dz = p1.z - p2.z;
-      const distSq = dx * dx + dz * dz;
+    // --- Advanced SAT Collision & Destruction Resolution ---
+    function handleCollisions() {
+      const playerOBB = getCarOBB(playerPhysics.mesh);
 
-      // Quick bounding check
-      if (distSq > 25) return null;
+      // Player forward velocity vector
+      const pForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+      const playerVelVec = pForward.clone().multiplyScalar(speed).add(playerPhysics.velocity);
 
-      // Detailed collision check
-      const normal = new THREE.Vector3(dx, 0, dz).normalize();
-      const overlap = (v1.width + v2.width) * 0.95 - Math.sqrt(distSq);
+      aiCars.forEach(ai => {
+        const aiOBB = getCarOBB(ai.mesh);
+        const collision = checkOBBCollision(playerOBB, aiOBB);
 
-      if (overlap > 0) {
-        return { normal: normal, overlap: overlap };
-      }
-      return null;
-    }
+        if (collision) {
+          const hitNormal = collision.normal;
+          const midPoint = playerPhysics.mesh.position.clone().add(ai.mesh.position).multiplyScalar(0.5);
 
-    function resolveCollisions() {
-      const allVehicles = [playerVehicle, ...aiCars];
+          // Physical Separation using exact OBB Overlap
+          playerPhysics.mesh.position.addScaledVector(hitNormal, collision.overlap * 0.5);
+          ai.mesh.position.addScaledVector(hitNormal, -collision.overlap * 0.5);
 
-      for (let i = 0; i < allVehicles.length; i++) {
-        for (let j = i + 1; j < allVehicles.length; j++) {
-          const v1 = allVehicles[i];
-          const v2 = allVehicles[j];
+          // Relative Velocity
+          const aiForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), ai.mesh.rotation.y);
+          const aiSpeedVal = ai.inCrashPhysics ? 0 : ai.currentSpeed * 40;
+          const aiVelVec = aiForward.clone().multiplyScalar(aiSpeedVal).add(ai.velocity);
 
-          const col = checkOBBCollision(v1, v2);
-          if (col) {
-            // Positional separation
-            v1.mesh.position.addScaledVector(col.normal, col.overlap * 0.5);
-            v2.mesh.position.addScaledVector(col.normal, -col.overlap * 0.5);
+          const relativeVel = new THREE.Vector3().subVectors(playerVelVec, aiVelVec);
+          const impactForce = relativeVel.length();
 
-            // Compute relative impact velocity
-            const v1Vel = v1.isPlayer ? new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), v1.mesh.rotation.y).multiplyScalar(speed) : v1.velocity;
-            const v2Vel = v2.isPlayer ? new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), v2.mesh.rotation.y).multiplyScalar(speed) : v2.velocity;
+          // Low Impact: Sparks and subtle rebound
+          if (impactForce < 0.15) {
+            spawnSparks(midPoint, 6);
+          } 
+          // High Speed Crash: Destruction, Crumpling, Bumper Detachment, Engine Explosions
+          else {
+            const isExtreme = impactForce > 0.6;
+            spawnSparks(midPoint, isExtreme ? 40 : 15);
 
-            const relVel = v1Vel.clone().sub(v2Vel);
-            const impactForce = relVel.length();
-            const impactPoint = v1.mesh.position.clone().add(v2.mesh.position).multiplyScalar(0.5);
+            // Crumple Mesh Geometry
+            const localHitPlayer = playerPhysics.mesh.worldToLocal(midPoint.clone());
+            const localHitAI = ai.mesh.worldToLocal(midPoint.clone());
 
-            // Tiered Collision Responses
-            if (impactForce < 0.12) {
-              // Minor scratch
-              spawnParticles(impactPoint, 4, 'spark');
-            } else {
-              // Heavy impact: Deform meshes and break parts
-              spawnParticles(impactPoint, 30, 'spark');
+            deformCarMesh(playerPhysics.vehicle, localHitPlayer, impactForce);
+            deformCarMesh(ai.vehicle, localHitAI, impactForce);
 
-              deformMesh(v1.meshData.chassis, impactPoint, impactForce);
-              deformMesh(v2.meshData.chassis, impactPoint, impactForce);
-
-              // Detach components based on impact intensity
-              v1.meshData.detachableParts.forEach(part => { if (Math.random() < impactForce * 0.8) detachPart(v1, part, impactForce); });
-              v2.meshData.detachableParts.forEach(part => { if (Math.random() < impactForce * 0.8) detachPart(v2, part, impactForce); });
-
-              // Physics Impulse Exchange
-              const impulse = col.normal.clone().multiplyScalar(impactForce * 0.4);
-              v1.velocity.add(impulse);
-              v2.velocity.sub(impulse);
-
-              v1.angularVelocity.y += (Math.random() - 0.5) * impactForce * 0.3;
-              v2.angularVelocity.y += (Math.random() - 0.5) * impactForce * 0.3;
-
-              // Check for Head-On Engine Angle Ignition
-              const v1EnginePos = v1.mesh.localToWorld(new THREE.Vector3(0, 0.5, -1.8));
-              const v2EnginePos = v2.mesh.localToWorld(new THREE.Vector3(0, 0.5, -1.8));
-
-              if (impactPoint.distanceTo(v1EnginePos) < 1.6 && impactForce > 0.4) v1.onFire = true;
-              if (impactPoint.distanceTo(v2EnginePos) < 1.6 && impactForce > 0.4) v2.onFire = true;
-
-              if (v1.isPlayer) {
-                speed *= 0.25;
-                isSpinningOut = true;
-                spinoutTimer = 40;
-              } else v1.inCrashPhysics = true;
-
-              if (v2.isPlayer) {
-                speed *= 0.25;
-                isSpinningOut = true;
-                spinoutTimer = 40;
-              } else v2.inCrashPhysics = true;
+            // Bumper Detachment Logic
+            if (impactForce > 0.35) {
+              if (playerPhysics.frontBumperAttached && localHitPlayer.z < -1.0) {
+                playerPhysics.vehicle.body.remove(playerPhysics.vehicle.frontBumper);
+                spawnDebrisPanel(midPoint, relativeVel, playerPhysics.vehicle.colorHex);
+                playerPhysics.frontBumperAttached = false;
+              }
+              if (ai.frontBumperAttached && localHitAI.z < -1.0) {
+                ai.vehicle.body.remove(ai.vehicle.frontBumper);
+                spawnDebrisPanel(midPoint, relativeVel.clone().negate(), ai.vehicle.colorHex);
+                ai.frontBumperAttached = false;
+              }
             }
+
+            // Engine Explosion Logic (Angle Check: Front Bonnet Impact)
+            const isFrontImpact = localHitAI.z < -0.8;
+            if (isExtreme && isFrontImpact && !ai.isDestroyed) {
+              ai.isDestroyed = true;
+              spawnExplosion(ai.mesh.position, 2.5);
+
+              // Explosion Shockwave forces applied to player
+              const shockwave = new THREE.Vector3().subVectors(playerPhysics.mesh.position, ai.mesh.position).normalize();
+              playerPhysics.velocity.addScaledVector(shockwave, 0.45);
+              playerPhysics.angularVelocity.y += (Math.random() - 0.5) * 0.4;
+
+              speed *= -0.2; // Halt forward drive
+              triggerSpinout();
+            }
+
+            // Linear momentum exchange (Car skidding instead of flying off)
+            const impulse = hitNormal.clone().multiplyScalar(impactForce * 0.4);
+            playerPhysics.velocity.add(impulse);
+            ai.velocity.sub(impulse);
+
+            // Rotational torque skids
+            playerPhysics.angularVelocity.y += (Math.random() - 0.5) * impactForce * 0.5;
+            ai.angularVelocity.y += (Math.random() - 0.5) * impactForce * 0.5;
+
+            speed *= 0.3;
+            ai.inCrashPhysics = true;
           }
         }
-      }
+      });
     }
 
     // --- Main Game Loop ---
     function animate() {
       requestAnimationFrame(animate);
 
-      // 1. Inputs & Drive Controls
       const currentGearKey = gearList[currentGearIndex];
       const activeGear = gearRatios[currentGearKey];
       let playerIsBraking = false;
 
+      // Player Steering & Engine Power
       if (isSpinningOut) {
-        speed *= 0.96;
+        speed *= 0.95;
         spinoutTimer--;
         if (spinoutTimer <= 0) {
           isSpinningOut = false;
           document.getElementById('warning').style.display = 'none';
         }
       } else {
-        if (keys.w && !activeGear.isNeutral) {
-          speed = activeGear.isReverse ? Math.max(speed + activeGear.accel, activeGear.maxSpeed) : Math.min(speed + activeGear.accel, activeGear.maxSpeed);
+        if (keys.w) {
+          if (!keys.shift && !activeGear.isNeutral) {
+            if (activeGear.isReverse) {
+              speed = Math.max(speed + activeGear.accel, activeGear.maxSpeed);
+            } else {
+              speed = Math.min(speed + activeGear.accel, activeGear.maxSpeed);
+            }
+          }
         } else {
           speed *= FRICTION;
         }
@@ -773,70 +832,98 @@
           else if (speed < 0) speed = Math.min(0, speed + BRAKE_POWER);
         }
 
+        if (Math.abs(speed) < 0.0005) speed = 0;
+
         const absSpeed = Math.abs(speed);
-        const steerLimit = 0.065 * (1.0 - Math.min(absSpeed / 2.0, 1.0) * 0.82);
+        const speedRatio = Math.min(absSpeed / 2.00, 1.0);
+        const maxSteerLimit = 0.065 * (1.0 - speedRatio * 0.82);
+        const steerBuildRate = 0.0008 + (1.0 - speedRatio) * 0.0006;
 
-        if (keys.a) currentSteerAngle = Math.min(currentSteerAngle + 0.001, steerLimit);
-        else if (keys.d) currentSteerAngle = Math.max(currentSteerAngle - 0.001, -steerLimit);
-        else currentSteerAngle += (0 - currentSteerAngle) * 0.1;
+        if (keys.a) {
+          currentSteerAngle = Math.min(currentSteerAngle + steerBuildRate, maxSteerLimit);
+        } else if (keys.d) {
+          currentSteerAngle = Math.max(currentSteerAngle - steerBuildRate, -maxSteerLimit);
+        } else {
+          currentSteerAngle += (0 - currentSteerAngle) * (0.04 + (absSpeed * 0.12));
+        }
 
-        if (Math.abs(speed) > 0.002 && !playerVehicle.isAirborne) {
-          playerVehicle.mesh.rotation.y += currentSteerAngle * (speed >= 0 ? 1 : -1);
+        if (Math.abs(speed) > 0.002 && !playerPhysics.isAirborne) {
+          const turnDirection = speed >= 0 ? 1 : -1;
+          carGroup.rotation.y += currentSteerAngle * turnDirection;
         }
       }
 
-      if (!playerVehicle.isAirborne) {
-        const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerVehicle.mesh.rotation.y);
-        playerVehicle.mesh.position.addScaledVector(fwd, speed);
+      // Drive Vector
+      if (!playerPhysics.isAirborne) {
+        const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+        carGroup.position.addScaledVector(forwardVector, speed);
       }
 
-      // 2. Sub-stepped Physics execution for maximum stability
-      const SUB_STEPS = 5;
-      for (let s = 0; s < SUB_STEPS; s++) {
-        stepVehiclePhysics(playerVehicle);
-
-        aiCars.forEach(ai => {
-          if (!ai.inCrashPhysics) {
-            ai.progress += ai.currentSpeed * ai.direction;
-            if (ai.progress > 1) ai.progress -= 1;
-            if (ai.progress < 0) ai.progress += 1;
-
-            const pos = roadCurve.getPointAt(ai.progress);
-            const tangent = roadCurve.getTangentAt(ai.progress);
-            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-
-            ai.mesh.position.copy(pos).addScaledVector(normal, ai.laneOffset);
-            ai.mesh.lookAt(pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, ai.laneOffset));
-          } else {
-            stepVehiclePhysics(ai);
-          }
-        });
-
-        resolveCollisions();
-      }
-
-      // 3. Update Visuals, Particles, and Camera
+      // Rigidbody Updates & Ground Hitbox Clamping
+      updatePhysicsBody(playerPhysics);
       updateParticles();
       updateDebris();
 
-      const brakeMat = playerIsBraking ? playerVehicle.meshData.activeMat : playerVehicle.meshData.idleMat;
-      playerVehicle.meshData.brakeLights.forEach(light => { if (light.mesh) light.mesh.material = brakeMat; });
+      // OBB SAT Collisions & Explosions
+      handleCollisions();
+
+      // UI Lights & Visuals
+      const activeBrakeMaterial = playerIsBraking ? playerVehicleMesh.activeMat : playerVehicleMesh.idleMat;
+      playerVehicleMesh.brakeLights.forEach(light => light.material = activeBrakeMaterial);
 
       signalTimer += 0.08;
       const isBlinking = Math.sin(signalTimer * 8) > 0;
-      playerVehicle.meshData.signalMatLeft.visible = (activeSignal === 'LEFT') && isBlinking;
-      playerVehicle.meshData.signalMatRight.visible = (activeSignal === 'RIGHT') && isBlinking;
+      playerVehicleMesh.signalMatLeft.visible = (activeSignal === 'LEFT') && isBlinking;
+      playerVehicleMesh.signalMatRight.visible = (activeSignal === 'RIGHT') && isBlinking;
 
-      playerVehicle.meshData.frontPivots.forEach(p => p.rotation.y = currentSteerAngle * 9);
+      playerVehicleMesh.frontPivots[0].rotation.y = currentSteerAngle * 9;
+      playerVehicleMesh.frontPivots[1].rotation.y = currentSteerAngle * 9;
 
-      grass.position.x = playerVehicle.mesh.position.x;
-      grass.position.z = playerVehicle.mesh.position.z;
+      const targetRoll = -currentSteerAngle * (speed * 2.2);
+      playerVehicleMesh.body.rotation.z += (targetRoll - playerVehicleMesh.body.rotation.z) * 0.12;
 
-      const camOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerVehicle.mesh.rotation.y);
-      camera.position.copy(playerVehicle.mesh.position).add(camOffset);
-      camera.lookAt(playerVehicle.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
+      // Update AI Traffic
+      aiCars.forEach(ai => {
+        if (!ai.inCrashPhysics) {
+          ai.progress += ai.currentSpeed * ai.direction;
+          if (ai.progress > 1) ai.progress -= 1;
+          if (ai.progress < 0) ai.progress += 1;
 
-      document.getElementById('speedometer').innerText = `${Math.round(Math.abs(speed) * 80)} MPH`;
+          const pos = roadCurve.getPointAt(ai.progress);
+          const tangent = roadCurve.getTangentAt(ai.progress);
+          const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+          ai.mesh.position.copy(pos).addScaledVector(normal, ai.laneOffset);
+          ai.mesh.position.y = GROUND_Y;
+          const lookTarget = pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, ai.laneOffset);
+          ai.mesh.lookAt(lookTarget);
+
+          const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
+          if (distToPlayer < 18) {
+            ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.000002);
+            ai.isBraking = true;
+          } else {
+            ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.000001);
+            ai.isBraking = false;
+          }
+        } else {
+          updatePhysicsBody(ai);
+        }
+
+        const aiBrakeMat = ai.isBraking ? ai.vehicle.activeMat : ai.vehicle.idleMat;
+        ai.vehicle.brakeLights.forEach(light => light.material = aiBrakeMat);
+      });
+
+      // Camera Tracking
+      grass.position.x = carGroup.position.x;
+      grass.position.z = carGroup.position.z;
+
+      const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+      camera.position.copy(carGroup.position).add(cameraOffset);
+      camera.lookAt(carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0)));
+
+      const mph = Math.round(Math.abs(speed) * 80);
+      document.getElementById('speedometer').innerText = `${mph} MPH`;
 
       renderer.render(scene, camera);
     }

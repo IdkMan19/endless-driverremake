@@ -49,7 +49,7 @@
     document.body.appendChild(renderer.domElement);
 
     // --- Lighting ---
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambientLight);
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -57,73 +57,91 @@
     scene.add(dirLight);
 
     // --- Infinite Grass Plane ---
-    const grassGeo = new THREE.PlaneGeometry(2000, 2000);
+    const grassGeo = new THREE.PlaneGeometry(3000, 3000);
     const grassMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
     const grass = new THREE.Mesh(grassGeo, grassMat);
     grass.rotation.x = -Math.PI / 2;
     grass.position.y = -0.05;
     scene.add(grass);
 
-    // --- Dynamic Two-Lane Solid Asphalt Road ---
-    const ROAD_WIDTH = 18;
+    // --- Curved 2-Lane Road Mesh Generator ---
+    const ROAD_WIDTH = 18; // Full width of the 2-lane asphalt
+    const NUM_POINTS = 400;
     const pathPoints = [];
-    
-    // Generate long winding path
+
+    // Generate road curve points
     let rX = 0, rZ = 0;
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < NUM_POINTS; i++) {
       pathPoints.push(new THREE.Vector3(rX, 0, rZ));
-      rZ -= 30;
-      rX += Math.sin(i * 0.15) * 25;
+      rZ -= 25;
+      rX += Math.sin(i * 0.12) * 22; // Smooth turns
     }
 
     const roadCurve = new THREE.CatmullRomCurve3(pathPoints);
+    const curvePoints = roadCurve.getSpacedPoints(800);
 
-    // Flat Cross-Section for a Solid 2-Lane Road
-    const shape = new THREE.Shape();
-    shape.moveTo(-ROAD_WIDTH / 2, 0);
-    shape.lineTo(ROAD_WIDTH / 2, 0);
+    // Build Flat Asphalt Ribbon Geometry
+    const roadVertices = [];
+    const roadIndices = [];
 
-    const extrudeSettings = {
-      steps: 800,
-      bevelEnabled: false,
-      extrudePath: roadCurve
-    };
+    for (let i = 0; i < curvePoints.length; i++) {
+      const pt = curvePoints[i];
+      const tangent = roadCurve.getTangentAt(i / curvePoints.length);
+      // Perpendicular vector along the horizontal plane (X/Z)
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-    const roadGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x111115, side: THREE.DoubleSide });
+      // Left vertex of asphalt
+      const leftPt = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2);
+      // Right vertex of asphalt
+      const rightPt = pt.clone().addScaledVector(normal, -ROAD_WIDTH / 2);
+
+      roadVertices.push(leftPt.x, 0.01, leftPt.z);
+      roadVertices.push(rightPt.x, 0.01, rightPt.z);
+
+      if (i < curvePoints.length - 1) {
+        const base = i * 2;
+        roadIndices.push(base, base + 1, base + 2);
+        roadIndices.push(base + 1, base + 3, base + 2);
+      }
+    }
+
+    const roadGeo = new THREE.BufferGeometry();
+    roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadVertices, 3));
+    roadGeo.setIndex(roadIndices);
+    roadGeo.computeVertexNormals();
+
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x222225, side: THREE.DoubleSide });
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-    roadMesh.position.y = 0.01;
     scene.add(roadMesh);
 
-    // Road Markings (Solid White Outer Shoulders + Yellow Center Line)
-    const linePoints = roadCurve.getSpacedPoints(500);
+    // --- Road Markings (Yellow Dashed Center + White Solid Edge Shoulders) ---
     const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
     const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    for (let i = 0; i < linePoints.length - 1; i++) {
-      const pt = linePoints[i];
-      const nextPt = linePoints[i + 1];
-      const tangent = roadCurve.getTangentAt(i / linePoints.length);
+    for (let i = 0; i < curvePoints.length - 1; i++) {
+      const pt = curvePoints[i];
+      const nextPt = curvePoints[i + 1];
+      const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-      // Yellow Center Dashed Line
-      if (i % 2 === 0) {
-        const centerDash = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.05, 2.5), lineMatYellow);
+      // Yellow Center Dash
+      if (i % 3 === 0) {
+        const centerDash = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3), lineMatYellow);
         centerDash.position.copy(pt);
         centerDash.position.y = 0.03;
         centerDash.lookAt(nextPt);
         scene.add(centerDash);
       }
 
-      // Solid White Left Shoulder
-      const leftEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.05, 3), lineMatWhite);
+      // White Left Shoulder Line
+      const leftEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3.5), lineMatWhite);
       leftEdge.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       leftEdge.position.y = 0.03;
       leftEdge.lookAt(nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6));
       scene.add(leftEdge);
 
-      // Solid White Right Shoulder
-      const rightEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.05, 3), lineMatWhite);
+      // White Right Shoulder Line
+      const rightEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3.5), lineMatWhite);
       rightEdge.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
       rightEdge.position.y = 0.03;
       rightEdge.lookAt(nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6)));
@@ -131,26 +149,26 @@
     }
 
     // Scenery Trees
-    const treeGeo = new THREE.ConeGeometry(2, 6, 5);
+    const treeGeo = new THREE.ConeGeometry(2.5, 7, 5);
     const treeMat = new THREE.MeshLambertMaterial({ color: 0x1b5e20 });
 
-    for (let i = 5; i < linePoints.length; i += 4) {
-      const pt = linePoints[i];
-      const tangent = roadCurve.getTangentAt(i / linePoints.length);
+    for (let i = 5; i < curvePoints.length; i += 5) {
+      const pt = curvePoints[i];
+      const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
       const treeL = new THREE.Mesh(treeGeo, treeMat);
-      treeL.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 + 6 + Math.random() * 12);
-      treeL.position.y = 3;
+      treeL.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 + 6 + Math.random() * 15);
+      treeL.position.y = 3.5;
       scene.add(treeL);
 
       const treeR = new THREE.Mesh(treeGeo, treeMat);
-      treeR.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 + 6 + Math.random() * 12));
-      treeR.position.y = 3;
+      treeR.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 + 6 + Math.random() * 15));
+      treeR.position.y = 3.5;
       scene.add(treeR);
     }
 
-    // --- Player Car Mesh ---
+    // --- Player Car ---
     const carGroup = new THREE.Group();
 
     const carBodyMat = new THREE.MeshLambertMaterial({ color: 0xcc0000 });
@@ -223,7 +241,7 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      // 1. Acceleration & Sensitive Braking / Reverse Logic
+      // Acceleration & Braking
       if (keys.forward) {
         if (speed < 0) {
           speed += BRAKE_POWER;
@@ -242,7 +260,7 @@
 
       if (Math.abs(speed) < 0.001) speed = 0;
 
-      // 2. Progressive Steering Logic
+      // Steering
       if (keys.left) {
         steeringInputPower = Math.min(steeringInputPower + STEER_RAMP_SPEED, 1.0);
       } else if (keys.right) {
@@ -257,22 +275,22 @@
         carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / MAX_SPEED);
       }
 
-      // 3. Movement
+      // Movement
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
-      // 4. Infinite Grass Plane Follow
+      // Infinite Grass Follow
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;
 
-      // 5. Camera Follow
+      // Camera Follow
       const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      // 6. UI Update
+      // UI
       const mph = Math.round(Math.abs(speed) * 80);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 

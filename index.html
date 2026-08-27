@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Driving</title>
+  <title>Physics Driving Simulator with Infinite Random Road</title>
   <style>
     body {
       margin: 0;
@@ -42,7 +42,7 @@
 </head>
 <body>
   <div id="ui">
-    <h1 style="margin:0; font-size: 24px;">Drivingr</h1>
+    <h1 style="margin:0; font-size: 24px;">Physics Driving Simulator</h1>
     <p style="margin:5px 0 0 0;"><b>W / Up</b> = Throttle | <b>S / Down</b> = Brake</p>
     <p style="margin:2px 0 0 0;"><b>A / D</b> = Steer | <b>Shift</b> = Clutch | <b>Z</b> = Upshift | <b>X</b> = Downshift</p>
     <div id="speedometer">0 MPH</div>
@@ -79,20 +79,27 @@
     grass.position.y = -0.05;
     scene.add(grass);
 
-    // --- Curved 2-Lane Road Mesh Generator ---
+    // --- Randomized Bi-Directional Closed Loop Road ---
     const ROAD_WIDTH = 18;
-    const NUM_POINTS = 400;
+    const NUM_POINTS = 300;
     const pathPoints = [];
 
-    let rX = 0, rZ = 0;
+    // Randomize curve frequencies each load
+    const freqA = 0.05 + Math.random() * 0.08;
+    const freqB = 0.02 + Math.random() * 0.04;
+    const radiusX = 600 + Math.random() * 300;
+    const radiusZ = 600 + Math.random() * 300;
+
     for (let i = 0; i < NUM_POINTS; i++) {
-      pathPoints.push(new THREE.Vector3(rX, 0, rZ));
-      rZ -= 25;
-      rX += Math.sin(i * 0.12) * 22;
+      const angle = (i / NUM_POINTS) * Math.PI * 2;
+      const wave = Math.sin(angle * 5) * 40 + Math.cos(angle * 3) * 30;
+      const x = Math.cos(angle) * (radiusX + wave);
+      const z = Math.sin(angle) * (radiusZ + wave);
+      pathPoints.push(new THREE.Vector3(x, 0, z));
     }
 
-    const roadCurve = new THREE.CatmullRomCurve3(pathPoints);
-    const curvePoints = roadCurve.getSpacedPoints(800);
+    const roadCurve = new THREE.CatmullRomCurve3(pathPoints, true); // Closed loop for infinite driving in both directions
+    const curvePoints = roadCurve.getSpacedPoints(1200);
 
     // Build Flat Asphalt Ribbon Geometry
     const roadVertices = [];
@@ -115,6 +122,10 @@
         roadIndices.push(base + 1, base + 3, base + 2);
       }
     }
+    // Connect loop tail to head
+    const lastBase = (curvePoints.length - 1) * 2;
+    roadIndices.push(lastBase, lastBase + 1, 0);
+    roadIndices.push(lastBase + 1, 1, 0);
 
     const roadGeo = new THREE.BufferGeometry();
     roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadVertices, 3));
@@ -129,9 +140,9 @@
     const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
     const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    for (let i = 0; i < curvePoints.length - 1; i++) {
+    for (let i = 0; i < curvePoints.length; i++) {
       const pt = curvePoints[i];
-      const nextPt = curvePoints[i + 1];
+      const nextPt = curvePoints[(i + 1) % curvePoints.length];
       const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
@@ -160,18 +171,18 @@
     const treeGeo = new THREE.ConeGeometry(2.5, 7, 5);
     const treeMat = new THREE.MeshLambertMaterial({ color: 0x1b5e20 });
 
-    for (let i = 5; i < curvePoints.length; i += 5) {
+    for (let i = 0; i < curvePoints.length; i += 4) {
       const pt = curvePoints[i];
       const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
       const treeL = new THREE.Mesh(treeGeo, treeMat);
-      treeL.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 + 6 + Math.random() * 15);
+      treeL.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 + 6 + Math.random() * 18);
       treeL.position.y = 3.5;
       scene.add(treeL);
 
       const treeR = new THREE.Mesh(treeGeo, treeMat);
-      treeR.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 + 6 + Math.random() * 15));
+      treeR.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 + 6 + Math.random() * 18));
       treeR.position.y = 3.5;
       scene.add(treeR);
     }
@@ -209,26 +220,30 @@
       return carGroup;
     }
 
-    // --- Player Car ---
+    // --- Player Car Setup ---
     const carGroup = createCarMesh(0xcc0000);
     scene.add(carGroup);
-    carGroup.position.set(0, 0, 0);
+    
+    // Spawn player on start of curve facing forward
+    const startPos = roadCurve.getPointAt(0);
+    const startTangent = roadCurve.getTangentAt(0);
+    carGroup.position.copy(startPos);
+    carGroup.lookAt(startPos.clone().add(startTangent));
 
     // --- AI Traffic System ---
     const aiCars = [];
     const trafficColors = [0x0055ff, 0xffaa00, 0x888888, 0x00aa44, 0x9900cc];
-    const NUM_AI_CARS = 12;
+    const NUM_AI_CARS = 16;
 
     for (let i = 0; i < NUM_AI_CARS; i++) {
       const color = trafficColors[i % trafficColors.length];
       const mesh = createCarMesh(color);
       scene.add(mesh);
 
-      const progress = (i / NUM_AI_CARS) + 0.05;
+      const progress = (i / NUM_AI_CARS);
       const laneSide = i % 2 === 0 ? 1 : -1;
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
-
-      const baseSpeed = (0.0008 + Math.random() * 0.0004) * 0.2;
+      const baseSpeed = (0.0004 + Math.random() * 0.0003);
 
       aiCars.push({
         mesh: mesh,
@@ -244,14 +259,15 @@
     const gearList = ['R', 'N', '1', '2', '3', '4', '5'];
     let currentGearIndex = 2; // Start in 1st gear ('1')
 
+    // Slower acceleration parameters across all gears
     const gearRatios = {
-      'R': { accel: -0.005, maxSpeed: -0.35, isReverse: true },
+      'R': { accel: -0.0020, maxSpeed: -0.30, isReverse: true },
       'N': { accel: 0, maxSpeed: 0, isNeutral: true },
-      '1': { accel: 0.012, maxSpeed: 0.35 },
-      '2': { accel: 0.009, maxSpeed: 0.60 },
-      '3': { accel: 0.007, maxSpeed: 0.85 },
-      '4': { accel: 0.005, maxSpeed: 1.10 },
-      '5': { accel: 0.003, maxSpeed: 1.35 }
+      '1': { accel: 0.0045, maxSpeed: 0.35 },
+      '2': { accel: 0.0032, maxSpeed: 0.60 },
+      '3': { accel: 0.0022, maxSpeed: 0.85 },
+      '4': { accel: 0.0015, maxSpeed: 1.10 },
+      '5': { accel: 0.0009, maxSpeed: 1.35 }
     };
 
     // --- Driving Physics Parameters ---
@@ -259,10 +275,9 @@
     let steeringInputPower = 0;
     let isSpinningOut = false;
     let spinoutTimer = 0;
-    let spinoutVelocity = 0;
 
-    const BRAKE_POWER = 0.035;
-    const FRICTION = 0.985;
+    const BRAKE_POWER = 0.025;
+    const FRICTION = 0.991; // Slightly smoother coasting
     const STEER_RAMP_SPEED = 0.015;
     const MAX_STEER_ANGLE = 0.035;
 
@@ -275,7 +290,6 @@
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.right = true;
       if (e.key === 'Shift') keys.clutch = true;
 
-      // Manual Gear Shift with Z (Upshift) and X (Downshift)
       if (keys.clutch && !isSpinningOut) {
         const oldGear = gearList[currentGearIndex];
 
@@ -292,8 +306,8 @@
         const newGear = gearList[currentGearIndex];
         document.getElementById('gear-display').innerText = `GEAR: ${newGear}`;
 
-        // Money-Shift Spin-Out Detection (5th directly to 1st or R at high speeds)
-        if (oldGear === '5' && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 0.7) {
+        // Spin-Out Trigger: 5th down to 1st or Reverse at speed
+        if (oldGear === '5' && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 0.65) {
           triggerSpinout();
         }
       }
@@ -309,8 +323,7 @@
 
     function triggerSpinout() {
       isSpinningOut = true;
-      spinoutTimer = 120; // Spinout lasts ~2 seconds
-      spinoutVelocity = speed;
+      spinoutTimer = 120;
       document.getElementById('warning').style.display = 'block';
     }
 
@@ -328,9 +341,8 @@
       const activeGear = gearRatios[currentGearKey];
 
       if (isSpinningOut) {
-        // Spin-Out Sequence: Lock wheels and rotate vehicle wildly
         carGroup.rotation.y += 0.25;
-        speed *= 0.96; // Friction slowly stops locked wheels
+        speed *= 0.96;
         spinoutTimer--;
 
         if (spinoutTimer <= 0) {
@@ -339,14 +351,12 @@
           document.getElementById('warning').style.display = 'none';
         }
       } else {
-        // Normal Acceleration & Braking Physics
+        // Throttle Logic with reduced acceleration rate
         if (keys.forward) {
           if (!keys.clutch && !activeGear.isNeutral) {
             if (activeGear.isReverse) {
-              // Accelerate backwards in Reverse gear
               speed = Math.max(speed + activeGear.accel, activeGear.maxSpeed);
             } else {
-              // Accelerate forward in 1st - 5th gears
               speed = Math.min(speed + activeGear.accel, activeGear.maxSpeed);
             }
           }
@@ -354,7 +364,7 @@
           speed *= FRICTION;
         }
 
-        // Dedicated Brake Control (S / Down Arrow)
+        // Brake Pedal
         if (keys.backward) {
           if (speed > 0) {
             speed = Math.max(0, speed - BRAKE_POWER);
@@ -363,7 +373,7 @@
           }
         }
 
-        if (Math.abs(speed) < 0.001) speed = 0;
+        if (Math.abs(speed) < 0.0005) speed = 0;
 
         // Steering Logic
         if (keys.left) {
@@ -374,22 +384,22 @@
           steeringInputPower *= 0.75;
         }
 
-        if (Math.abs(speed) > 0.005) {
+        if (Math.abs(speed) > 0.003) {
           const turnDirection = speed >= 0 ? 1 : -1;
           const currentTurnRate = steeringInputPower * MAX_STEER_ANGLE;
           carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / 1.35);
         }
       }
 
-      // Movement Vector
+      // Physics Translation
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
-      // --- Update AI Traffic ---
+      // --- Update AI Traffic Loop ---
       aiCars.forEach(ai => {
         ai.progress += ai.currentSpeed * ai.direction;
-        if (ai.progress > 0.98) ai.progress = 0.02;
-        if (ai.progress < 0.02) ai.progress = 0.98;
+        if (ai.progress > 1) ai.progress -= 1;
+        if (ai.progress < 0) ai.progress += 1;
 
         const pos = roadCurve.getPointAt(ai.progress);
         const tangent = roadCurve.getTangentAt(ai.progress);
@@ -402,24 +412,24 @@
 
         const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
         if (distToPlayer < 18) {
-          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.00002);
+          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.00001);
         } else {
-          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.00001);
+          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.000005);
         }
       });
 
-      // Infinite Grass Follow
+      // Infinite Grass Plane Tracking
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;
 
-      // Camera Follow
+      // Camera Position Tracking
       const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      // UI Updates
+      // Speedometer Readout
       const mph = Math.round(Math.abs(speed) * 80);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 

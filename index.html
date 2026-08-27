@@ -321,6 +321,9 @@
 
       const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
       const darkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+      const interiorMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+      const seatMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+      const dashMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
       const bumperMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
       const glassMat = new THREE.MeshPhongMaterial({ color: 0x223344, shininess: 80, transparent: true, opacity: 0.85 });
       const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
@@ -330,8 +333,63 @@
       const signalMatLeft = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
       const signalMatRight = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
 
-      // Core Structural Body
-      const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.7, 4), carBodyMat);
+      // Core Chassis Floor / Lower Frame
+      const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.2, 3.8), darkMat);
+      chassis.position.y = 0.25;
+      carGroup.add(chassis); // Fixed to car root so interior stays intact during destruction
+
+      // Detailed Interior Mechanics (Stays visible when body/cabin break off)
+      const interiorGroup = new THREE.Group();
+      
+      // Dashboard
+      const dashboard = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 0.5), dashMat);
+      dashboard.position.set(0, 0.75, -0.7);
+      interiorGroup.add(dashboard);
+
+      // Steering Wheel
+      const steeringWheel = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.03, 8, 16), darkMat);
+      steeringWheel.position.set(-0.45, 0.85, -0.45);
+      steeringWheel.rotation.x = Math.PI / 4;
+      interiorGroup.add(steeringWheel);
+
+      // Seats
+      const seatGeo = new THREE.BoxGeometry(0.55, 0.15, 0.55);
+      const backrestGeo = new THREE.BoxGeometry(0.55, 0.65, 0.12);
+
+      // Front Seats
+      const seatFL = new THREE.Mesh(seatGeo, seatMat);
+      seatFL.position.set(-0.45, 0.45, -0.1);
+      const backFL = new THREE.Mesh(backrestGeo, seatMat);
+      backFL.position.set(-0.45, 0.75, 0.18);
+      backFL.rotation.x = -0.15;
+      interiorGroup.add(seatFL, backFL);
+
+      const seatFR = new THREE.Mesh(seatGeo, seatMat);
+      seatFR.position.set(0.45, 0.45, -0.1);
+      const backFR = new THREE.Mesh(backrestGeo, seatMat);
+      backFR.position.set(0.45, 0.75, 0.18);
+      backFR.rotation.x = -0.15;
+      interiorGroup.add(seatFR, backFR);
+
+      // Rear Bench
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.15, 0.55), seatMat);
+      bench.position.set(0, 0.48, 0.75);
+      const benchBack = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.65, 0.12), seatMat);
+      benchBack.position.set(0, 0.78, 1.02);
+      benchBack.rotation.x = -0.15;
+      interiorGroup.add(bench, benchBack);
+
+      // Center Console & Gear Shifter
+      const consoleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.9), interiorMat);
+      consoleMesh.position.set(0, 0.45, 0.1);
+      const shifter = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.2), darkMat);
+      shifter.position.set(0, 0.6, -0.1);
+      interiorGroup.add(consoleMesh, shifter);
+
+      carGroup.add(interiorGroup);
+
+      // Outer Structural Panels (Break-Apart Visual Shell)
+      const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.5, 4), carBodyMat);
       carBody.position.y = 0.55;
       visualBody.add(carBody);
 
@@ -439,8 +497,10 @@
       return {
         root: carGroup,
         body: visualBody,
+        steeringWheel: steeringWheel,
         colorHex: colorHex,
         detachables: {
+          carBody: carBody,
           frontBumper: frontBumper,
           rearBumper: rearBumper,
           cabin: cabin,
@@ -697,6 +757,10 @@
       const parts = carMesh.detachables;
       const colorHex = carMesh.colorHex;
 
+      if (parts.carBody && parts.carBody.parent) {
+        parts.carBody.parent.remove(parts.carBody);
+        spawnDebris(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), velocity, colorHex, 2.5);
+      }
       if (parts.frontBumper && parts.frontBumper.parent) {
         parts.frontBumper.parent.remove(parts.frontBumper);
         spawnDebris(pos.clone().add(new THREE.Vector3(0, 0.3, -2.0)), velocity, 0x333333, 1.5);
@@ -785,7 +849,7 @@
             speed *= -0.15; // Speed drop on major impact
             ai.inCrashPhysics = true;
 
-            // Dismantle AI and/or Player Body Sub-Meshes into fragments
+            // Dismantle AI and/or Player Body Sub-Meshes into fragments (exposing interior frame)
             disintegrateVehicle(ai.vehicle, ai.mesh.position, aiVelVec);
             disintegrateVehicle(playerVehicleMesh, playerPhysics.mesh.position, playerVelVec);
 
@@ -882,6 +946,9 @@
 
       playerVehicleMesh.frontPivots[0].rotation.y = currentSteerAngle * 9;
       playerVehicleMesh.frontPivots[1].rotation.y = currentSteerAngle * 9;
+      if (playerVehicleMesh.steeringWheel) {
+        playerVehicleMesh.steeringWheel.rotation.z = -currentSteerAngle * 15;
+      }
 
       const targetRoll = -currentSteerAngle * (speed * 2.2);
       playerVehicleMesh.body.rotation.z += (targetRoll - playerVehicleMesh.body.rotation.z) * 0.12;

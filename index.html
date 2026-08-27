@@ -131,11 +131,10 @@
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
     scene.add(roadMesh);
 
-    // --- Flat Road Markings Fix ---
+    // --- Flat Road Markings ---
     const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00, side: THREE.DoubleSide });
     const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
 
-    // Pre-orient geometry horizontally on the ground plane (X/Z)
     const dashGeo = new THREE.PlaneGeometry(0.35, 3);
     dashGeo.rotateX(-Math.PI / 2);
 
@@ -148,7 +147,6 @@
       const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-      // Center dash
       if (i % 3 === 0) {
         const centerDash = new THREE.Mesh(dashGeo, lineMatYellow);
         centerDash.position.set(pt.x, 0.02, pt.z);
@@ -156,7 +154,6 @@
         scene.add(centerDash);
       }
 
-      // Left edge line
       const leftPos = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       const leftNext = nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       const leftEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
@@ -164,7 +161,6 @@
       leftEdge.lookAt(leftNext.x, 0.02, leftNext.z);
       scene.add(leftEdge);
 
-      // Right edge line
       const rightPos = pt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
       const rightNext = nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
       const rightEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
@@ -277,14 +273,17 @@
 
     // --- Driving Physics Parameters ---
     let speed = 0;
-    let steeringInputPower = 0;
+    let steeringAngle = 0; // Current actual steering position
     let isSpinningOut = false;
     let spinoutTimer = 0;
 
     const BRAKE_POWER = 0.025;
     const FRICTION = 0.991;
-    const STEER_RAMP_SPEED = 0.015;
-    const MAX_STEER_ANGLE = 0.035;
+    
+    // Smooth Steering Dynamic Parameters
+    const STEER_SPEED = 0.04;        // Speed at which steering turns into the corner
+    const STEER_RETURN = 0.08;       // Speed at which wheel centers itself when key released
+    const MAX_STEER_ANGLE = 0.032;   // Maximum turn angle lock
 
     const keys = { forward: false, backward: false, left: false, right: false, clutch: false };
 
@@ -377,17 +376,22 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        if (keys.left) {
-          steeringInputPower = Math.min(steeringInputPower + STEER_RAMP_SPEED, 1.0);
-        } else if (keys.right) {
-          steeringInputPower = Math.max(steeringInputPower - STEER_RAMP_SPEED, -1.0);
+        // --- Smooth Dynamic Steering Ramp ---
+        let targetSteer = 0;
+        if (keys.left) targetSteer = 1;
+        if (keys.right) targetSteer = -1;
+
+        if (targetSteer !== 0) {
+          // Gradually ramp up turning speed into the turn
+          steeringAngle = THREE.MathUtils.lerp(steeringAngle, targetSteer, STEER_SPEED);
         } else {
-          steeringInputPower *= 0.75;
+          // Smoothly ramp down turning speed back to center on release
+          steeringAngle = THREE.MathUtils.lerp(steeringAngle, 0, STEER_RETURN);
         }
 
         if (Math.abs(speed) > 0.003) {
           const turnDirection = speed >= 0 ? 1 : -1;
-          const currentTurnRate = steeringInputPower * MAX_STEER_ANGLE;
+          const currentTurnRate = steeringAngle * MAX_STEER_ANGLE;
           carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / 1.35);
         }
       }

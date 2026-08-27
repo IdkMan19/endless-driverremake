@@ -31,11 +31,11 @@
       color: #ffcc00;
       margin-top: 3px;
     }
-    #signal-display {
+    #signals-display {
       font-size: 18px;
       font-weight: bold;
-      color: #ffaa00;
-      margin-top: 3px;
+      color: #ffffff;
+      margin-top: 5px;
     }
     #warning {
       font-size: 18px;
@@ -49,11 +49,11 @@
 <body>
   <div id="ui">
     <h1 style="margin:0; font-size: 24px;">Physics Driving Simulator</h1>
-    <p style="margin:5px 0 0 0;"><b>W / S</b> = Throttle / Brake | <b>A / D</b> = Steer</p>
-    <p style="margin:2px 0 0 0;"><b>Shift + Up / Down</b> = Upshift / Downshift | <b>Left / Right Arrows</b> = Turn Signals</p>
+    <p style="margin:5px 0 0 0;"><b>W</b> = Throttle | <b>S</b> = Brake | <b>A / D</b> = Steer</p>
+    <p style="margin:2px 0 0 0;"><b>Shift + Up/Down</b> = Gear Shift | <b>Left/Right Arrows</b> = Turn Signals</p>
     <div id="speedometer">0 MPH</div>
     <div id="gear-display">GEAR: 1</div>
-    <div id="signal-display">SIGNAL: OFF</div>
+    <div id="signals-display">SIGNAL: OFF</div>
     <div id="warning">MONEY SHIFT! SPINOUT!</div>
   </div>
 
@@ -78,7 +78,7 @@
     dirLight.position.set(50, 100, 50);
     scene.add(dirLight);
 
-    // --- Grass Plane ---
+    // --- Infinite Grass Plane ---
     const grassGeo = new THREE.PlaneGeometry(3000, 3000);
     const grassMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
     const grass = new THREE.Mesh(grassGeo, grassMat);
@@ -86,7 +86,7 @@
     grass.position.y = -0.05;
     scene.add(grass);
 
-    // --- Road Setup ---
+    // --- Randomized Bi-Directional Closed Loop Road ---
     const ROAD_WIDTH = 18;
     const NUM_POINTS = 300;
     const pathPoints = [];
@@ -176,7 +176,7 @@
       scene.add(rightEdge);
     }
 
-    // Trees
+    // Scenery Trees
     const treeGeo = new THREE.ConeGeometry(2.5, 7, 5);
     const treeMat = new THREE.MeshLambertMaterial({ color: 0x1b5e20 });
 
@@ -196,8 +196,8 @@
       scene.add(treeR);
     }
 
-    // --- Car Factory with Turn Signals ---
-    function createCarMesh(colorHex, isPlayer = false) {
+    // --- Helper to Build Dynamic Car Models with Signals & Pivoting Front Wheels ---
+    function createCarMesh(colorHex) {
       const carGroup = new THREE.Group();
       const visualBody = new THREE.Group();
       carGroup.add(visualBody);
@@ -211,6 +211,26 @@
       const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2), cabinMat);
       cabin.position.set(0, 1.2, -0.2);
       visualBody.add(cabin);
+
+      // Turn Signals (Front & Rear)
+      const signalMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
+      const signalGeo = new THREE.BoxGeometry(0.3, 0.2, 0.1);
+
+      const signalFL = new THREE.Mesh(signalGeo, signalMat);
+      signalFL.position.set(-0.95, 0.6, -2.01);
+      visualBody.add(signalFL);
+
+      const signalFR = new THREE.Mesh(signalGeo, signalMat);
+      signalFR.position.set(0.95, 0.6, -2.01);
+      visualBody.add(signalFR);
+
+      const signalRL = new THREE.Mesh(signalGeo, signalMat);
+      signalRL.position.set(-0.95, 0.6, 2.01);
+      visualBody.add(signalRL);
+
+      const signalRR = new THREE.Mesh(signalGeo, signalMat);
+      signalRR.position.set(0.95, 0.6, 2.01);
+      visualBody.add(signalRR);
 
       const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
       const wheelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
@@ -236,39 +256,17 @@
       frontRightPivot.add(frontRight);
       visualBody.add(frontRightPivot);
 
-      // Turn Signals (Front & Rear)
-      let turnSignalLights = { left: [], right: [] };
-      if (isPlayer) {
-        const signalMatOff = new THREE.MeshBasicMaterial({ color: 0x443300 });
-        const signalGeo = new THREE.BoxGeometry(0.25, 0.15, 0.1);
-
-        // Front Left & Rear Left
-        const fl = new THREE.Mesh(signalGeo, signalMatOff);
-        fl.position.set(-0.9, 0.6, -2.01);
-        const rl = new THREE.Mesh(signalGeo, signalMatOff);
-        rl.position.set(-0.9, 0.6, 2.01);
-        visualBody.add(fl, rl);
-        turnSignalLights.left.push(fl, rl);
-
-        // Front Right & Rear Right
-        const fr = new THREE.Mesh(signalGeo, signalMatOff);
-        fr.position.set(0.9, 0.6, -2.01);
-        const rr = new THREE.Mesh(signalGeo, signalMatOff);
-        rr.position.set(0.9, 0.6, 2.01);
-        visualBody.add(fr, rr);
-        turnSignalLights.right.push(fr, rr);
-      }
-
       return {
         root: carGroup,
         body: visualBody,
         frontPivots: [frontLeftPivot, frontRightPivot],
-        signals: turnSignalLights
+        signalsLeft: [signalFL, signalRL],
+        signalsRight: [signalFR, signalRR]
       };
     }
 
     // --- Player Car Setup ---
-    const playerVehicle = createCarMesh(0xcc0000, true);
+    const playerVehicle = createCarMesh(0xcc0000);
     const carGroup = playerVehicle.root;
     scene.add(carGroup);
     
@@ -290,6 +288,7 @@
       const progress = (i / NUM_AI_CARS);
       const laneSide = i % 2 === 0 ? 1 : -1;
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
+
       const baseSpeed = (0.0004 + Math.random() * 0.0003) * 0.2;
 
       aiCars.push({
@@ -322,18 +321,16 @@
     let isSpinningOut = false;
     let spinoutTimer = 0;
 
+    // Turn Signals State: 'OFF', 'LEFT', 'RIGHT'
+    let activeSignal = 'OFF';
+    let signalTimer = 0;
+
     const BRAKE_POWER = 0.025;
     const FRICTION = 0.991;
     
-    // Steering Dynamics
-    const MAX_STEER_ANGLE = 0.038;
-    const STEER_ACCEL = 0.0018; 
-
-    // Turn Signals State
-    let turnSignalMode = 'OFF'; // 'OFF', 'LEFT', 'RIGHT'
-    let signalBlinkTimer = 0;
-    const signalMatOff = new THREE.MeshBasicMaterial({ color: 0x443300 });
-    const signalMatOn = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+    // Steering Tuning with Steering Inertia / Centering Decay
+    const BASE_STEER_ACCEL = 0.0018; 
+    const STEER_RETURN_RATE = 0.96; // Gradual return to straight (lower decay = smoother return)
 
     const keys = { w: false, s: false, a: false, d: false, shift: false };
 
@@ -344,7 +341,7 @@
       if (e.key === 'd' || e.key === 'D') keys.d = true;
       if (e.key === 'Shift') keys.shift = true;
 
-      // Shift + Up/Down for Gears
+      // Gear Shifting: Shift + Up/Down Arrows
       if (keys.shift && !isSpinningOut) {
         const oldGear = gearList[currentGearIndex];
 
@@ -362,15 +359,14 @@
         }
       }
 
-      // Left/Right Arrow Keys for Turn Signals
+      // Turn Signal Controls: Left / Right Arrows (without Shift)
       if (!keys.shift) {
         if (e.key === 'ArrowLeft') {
-          turnSignalMode = turnSignalMode === 'LEFT' ? 'OFF' : 'LEFT';
-          document.getElementById('signal-display').innerText = `SIGNAL: ${turnSignalMode}`;
+          activeSignal = (activeSignal === 'LEFT') ? 'OFF' : 'LEFT';
         } else if (e.key === 'ArrowRight') {
-          turnSignalMode = turnSignalMode === 'RIGHT' ? 'OFF' : 'RIGHT';
-          document.getElementById('signal-display').innerText = `SIGNAL: ${turnSignalMode}`;
+          activeSignal = (activeSignal === 'RIGHT') ? 'OFF' : 'RIGHT';
         }
+        document.getElementById('signals-display').innerText = `SIGNAL: ${activeSignal}`;
       }
     });
 
@@ -412,9 +408,8 @@
           document.getElementById('warning').style.display = 'none';
         }
       } else {
-        // Accelerate & Brake (WASD only)
         if (keys.w) {
-          if (!activeGear.isNeutral) {
+          if (!keys.shift && !activeGear.isNeutral) {
             if (activeGear.isReverse) {
               speed = Math.max(speed + activeGear.accel, activeGear.maxSpeed);
             } else {
@@ -435,47 +430,48 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // --- Realistic Turning & Auto-Centering Mechanics ---
+        // Speed-dependent steering sensitivity (more sensitive low speed, less sensitive high speed)
+        const speedRatio = Math.min(Math.abs(speed) / 1.35, 1.0);
+        const maxSteerLimit = 0.055 - (speedRatio * 0.035); // Sensitivity drops as speed grows
+        
         if (keys.a) {
-          currentSteerAngle = Math.min(currentSteerAngle + STEER_ACCEL, MAX_STEER_ANGLE);
+          currentSteerAngle = Math.min(currentSteerAngle + BASE_STEER_ACCEL, maxSteerLimit);
         } else if (keys.d) {
-          currentSteerAngle = Math.max(currentSteerAngle - STEER_ACCEL, -MAX_STEER_ANGLE);
+          currentSteerAngle = Math.max(currentSteerAngle - BASE_STEER_ACCEL, -maxSteerLimit);
         } else {
-          // Speed-sensitive natural steering return rate (slower when static, smoother when moving)
-          const centeringRate = 0.03 + Math.abs(speed) * 0.12;
-          currentSteerAngle += (0 - currentSteerAngle) * centeringRate;
+          // Gradual caster-effect centering, dependent on car speed
+          const returnFactor = STEER_RETURN_RATE - (speedRatio * 0.03);
+          currentSteerAngle *= returnFactor;
         }
 
-        // Turning power scales dynamically with car momentum
-        if (Math.abs(speed) > 0.003) {
+        if (Math.abs(speed) > 0.002) {
           const turnDirection = speed >= 0 ? 1 : -1;
-          carGroup.rotation.y += currentSteerAngle * turnDirection * (Math.abs(speed) / 1.1);
+          carGroup.rotation.y += currentSteerAngle * turnDirection;
         }
       }
 
-      // Visual Front Wheel Pivot
-      const frontWheelAngle = currentSteerAngle * 12;
+      // --- Turn Signal Flasher System ---
+      signalTimer += 0.08;
+      const isBlinking = Math.sin(signalTimer * 5) > 0;
+
+      playerVehicle.signalsLeft.forEach(mesh => {
+        mesh.material.visible = (activeSignal === 'LEFT') && isBlinking;
+      });
+      playerVehicle.signalsRight.forEach(mesh => {
+        mesh.material.visible = (activeSignal === 'RIGHT') && isBlinking;
+      });
+
+      // Front wheel steering angle
+      const frontWheelAngle = currentSteerAngle * 10;
       playerVehicle.frontPivots[0].rotation.y = frontWheelAngle;
       playerVehicle.frontPivots[1].rotation.y = frontWheelAngle;
 
-      // Realistic Chassis Lean (Roll)
-      const targetRoll = -currentSteerAngle * (speed * 1.8);
-      playerVehicle.body.rotation.z += (targetRoll - playerVehicle.body.rotation.z) * 0.15;
+      // Body roll logic
+      const targetRoll = -currentSteerAngle * (speed * 2.2);
+      playerVehicle.body.rotation.z += (targetRoll - playerVehicle.body.rotation.z) * 0.12;
 
-      // Forward Motion Vector
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
-
-      // --- Turn Signal Blinking System ---
-      signalBlinkTimer++;
-      const isBlinkOn = Math.floor(signalBlinkTimer / 20) % 2 === 0;
-
-      playerVehicle.signals.left.forEach(mesh => {
-        mesh.material = (turnSignalMode === 'LEFT' && isBlinkOn) ? signalMatOn : signalMatOff;
-      });
-      playerVehicle.signals.right.forEach(mesh => {
-        mesh.material = (turnSignalMode === 'RIGHT' && isBlinkOn) ? signalMatOn : signalMatOff;
-      });
 
       // --- Update AI Traffic ---
       aiCars.forEach(ai => {

@@ -196,63 +196,126 @@
       scene.add(treeR);
     }
 
-    // --- Helper to Build Dynamic Car Models ---
+    // --- Helper to Build Detailed Vehicle Models ---
     function createCarMesh(colorHex) {
       const carGroup = new THREE.Group();
       const visualBody = new THREE.Group();
       carGroup.add(visualBody);
 
+      // Shared materials
       const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
-      const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), carBodyMat);
-      carBody.position.y = 0.5;
+      const darkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+      const bumperMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+      const glassMat = new THREE.MeshPhongMaterial({ color: 0x223344, shininess: 80, transparent: true, opacity: 0.85 });
+      const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+      const taillightMat = new THREE.MeshBasicMaterial({ color: 0xcc0000 });
+
+      // Main Chassis Body
+      const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.7, 4), carBodyMat);
+      carBody.position.y = 0.55;
       visualBody.add(carBody);
 
-      const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2), cabinMat);
-      cabin.position.set(0, 1.2, -0.2);
+      // Glass Cabin
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.6, 2.1), glassMat);
+      cabin.position.set(0, 1.15, -0.1);
       visualBody.add(cabin);
 
+      // Roof Cover
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.05, 1.9), carBodyMat);
+      roof.position.set(0, 1.46, -0.1);
+      visualBody.add(roof);
+
+      // Front Bumper
+      const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat);
+      frontBumper.position.set(0, 0.35, -2.05);
+      visualBody.add(frontBumper);
+
+      // Rear Bumper
+      const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat);
+      rearBumper.position.set(0, 0.35, 2.05);
+      visualBody.add(rearBumper);
+
+      // Side Mirrors
+      const mirrorGeo = new THREE.BoxGeometry(0.2, 0.15, 0.25);
+      const mirrorL = new THREE.Mesh(mirrorGeo, bumperMat);
+      mirrorL.position.set(-0.95, 1.05, -0.8);
+      visualBody.add(mirrorL);
+
+      const mirrorR = new THREE.Mesh(mirrorGeo, bumperMat);
+      mirrorR.position.set(0.95, 1.05, -0.8);
+      visualBody.add(mirrorR);
+
+      // Headlights
+      const headlightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
+      const headlightL = new THREE.Mesh(headlightGeo, headlightMat);
+      headlightL.position.set(-0.65, 0.65, -2.02);
+      visualBody.add(headlightL);
+
+      const headlightR = new THREE.Mesh(headlightGeo, headlightMat);
+      headlightR.position.set(0.65, 0.65, -2.02);
+      visualBody.add(headlightR);
+
+      // Taillights
+      const taillightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
+      const taillightL = new THREE.Mesh(taillightGeo, taillightMat);
+      taillightL.position.set(-0.65, 0.65, 2.02);
+      visualBody.add(taillightL);
+
+      const taillightR = new THREE.Mesh(taillightGeo, taillightMat);
+      taillightR.position.set(0.65, 0.65, 2.02);
+      visualBody.add(taillightR);
+
+      // Turn Signals (Amber Glowing Front & Rear Caps)
       const signalMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
-      const signalGeo = new THREE.BoxGeometry(0.3, 0.2, 0.1);
+      const signalGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
 
       const signalFL = new THREE.Mesh(signalGeo, signalMat);
-      signalFL.position.set(-0.95, 0.6, -2.01);
+      signalFL.position.set(-0.92, 0.65, -2.02);
       visualBody.add(signalFL);
 
       const signalFR = new THREE.Mesh(signalGeo, signalMat);
-      signalFR.position.set(0.95, 0.6, -2.01);
+      signalFR.position.set(0.92, 0.65, -2.02);
       visualBody.add(signalFR);
 
       const signalRL = new THREE.Mesh(signalGeo, signalMat);
-      signalRL.position.set(-0.95, 0.6, 2.01);
+      signalRL.position.set(-0.92, 0.65, 2.02);
       visualBody.add(signalRL);
 
       const signalRR = new THREE.Mesh(signalGeo, signalMat);
-      signalRR.position.set(0.95, 0.6, 2.01);
+      signalRR.position.set(0.92, 0.65, 2.02);
       visualBody.add(signalRR);
 
+      // Detailed Wheels with Rim Caps
       const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
-      const wheelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
       wheelGeo.rotateZ(Math.PI / 2);
+      
+      const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.32, 12);
+      const rimMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+      rimGeo.rotateZ(Math.PI / 2);
 
-      const rearLeft = new THREE.Mesh(wheelGeo, wheelMat);
-      rearLeft.position.set(-1.1, 0.4, 1.2);
+      function buildWheelAssembly() {
+        const pivot = new THREE.Group();
+        const tire = new THREE.Mesh(wheelGeo, darkMat);
+        const rim = new THREE.Mesh(rimGeo, rimMat);
+        pivot.add(tire);
+        pivot.add(rim);
+        return pivot;
+      }
+
+      const rearLeft = buildWheelAssembly();
+      rearLeft.position.set(-1.05, 0.4, 1.2);
       visualBody.add(rearLeft);
 
-      const rearRight = new THREE.Mesh(wheelGeo, wheelMat);
-      rearRight.position.set(1.1, 0.4, 1.2);
+      const rearRight = buildWheelAssembly();
+      rearRight.position.set(1.05, 0.4, 1.2);
       visualBody.add(rearRight);
 
-      const frontLeftPivot = new THREE.Group();
-      frontLeftPivot.position.set(-1.1, 0.4, -1.2);
-      const frontLeft = new THREE.Mesh(wheelGeo, wheelMat);
-      frontLeftPivot.add(frontLeft);
+      const frontLeftPivot = buildWheelAssembly();
+      frontLeftPivot.position.set(-1.05, 0.4, -1.2);
       visualBody.add(frontLeftPivot);
 
-      const frontRightPivot = new THREE.Group();
-      frontRightPivot.position.set(1.1, 0.4, -1.2);
-      const frontRight = new THREE.Mesh(wheelGeo, wheelMat);
-      frontRightPivot.add(frontRight);
+      const frontRightPivot = buildWheelAssembly();
+      frontRightPivot.position.set(1.05, 0.4, -1.2);
       visualBody.add(frontRightPivot);
 
       return {
@@ -316,7 +379,7 @@
 
     // --- Driving Physics Parameters ---
     let speed = 0;
-    let currentSteerAngle = 0; // Active steering wheel position
+    let currentSteerAngle = 0;
     let isSpinningOut = false;
     let spinoutTimer = 0;
 
@@ -422,14 +485,11 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // --- Progressive Speed-Sensitive Steering Dynamics ---
+        // --- Speed-Sensitive Steering Inertia ---
         const absSpeed = Math.abs(speed);
         const speedRatio = Math.min(absSpeed / 1.35, 1.0);
         
-        // Maximum steering lock drops drastically at higher speeds
         const maxSteerLimit = 0.065 * (1.0 - speedRatio * 0.82); 
-        
-        // Steering acceleration rate (slowly builds angle)
         const steerBuildRate = 0.0008 + (1.0 - speedRatio) * 0.0006;
 
         if (keys.a) {
@@ -445,7 +505,6 @@
             currentSteerAngle += (-maxSteerLimit - currentSteerAngle) * 0.08;
           }
         } else {
-          // Smooth return to center when released
           const returnSpeed = 0.04 + (absSpeed * 0.12);
           currentSteerAngle += (0 - currentSteerAngle) * returnSpeed;
         }

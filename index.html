@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Physics Driving Simulator with Dynamic Steering</title>
+  <title>Physics Driving Simulator</title>
   <style>
     body {
       margin: 0;
@@ -31,6 +31,12 @@
       color: #ffcc00;
       margin-top: 3px;
     }
+    #signal-display {
+      font-size: 18px;
+      font-weight: bold;
+      color: #ffaa00;
+      margin-top: 3px;
+    }
     #warning {
       font-size: 18px;
       font-weight: bold;
@@ -43,10 +49,11 @@
 <body>
   <div id="ui">
     <h1 style="margin:0; font-size: 24px;">Physics Driving Simulator</h1>
-    <p style="margin:5px 0 0 0;"><b>W / Up</b> = Throttle | <b>S / Down</b> = Brake</p>
-    <p style="margin:2px 0 0 0;"><b>A / D</b> = Steer | <b>Shift</b> = Clutch | <b>Z</b> = Upshift | <b>X</b> = Downshift</p>
+    <p style="margin:5px 0 0 0;"><b>W / S</b> = Throttle / Brake | <b>A / D</b> = Steer</p>
+    <p style="margin:2px 0 0 0;"><b>Shift + Up / Down</b> = Upshift / Downshift | <b>Left / Right Arrows</b> = Turn Signals</p>
     <div id="speedometer">0 MPH</div>
     <div id="gear-display">GEAR: 1</div>
+    <div id="signal-display">SIGNAL: OFF</div>
     <div id="warning">MONEY SHIFT! SPINOUT!</div>
   </div>
 
@@ -71,7 +78,7 @@
     dirLight.position.set(50, 100, 50);
     scene.add(dirLight);
 
-    // --- Infinite Grass Plane ---
+    // --- Grass Plane ---
     const grassGeo = new THREE.PlaneGeometry(3000, 3000);
     const grassMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
     const grass = new THREE.Mesh(grassGeo, grassMat);
@@ -79,7 +86,7 @@
     grass.position.y = -0.05;
     scene.add(grass);
 
-    // --- Randomized Bi-Directional Closed Loop Road ---
+    // --- Road Setup ---
     const ROAD_WIDTH = 18;
     const NUM_POINTS = 300;
     const pathPoints = [];
@@ -169,7 +176,7 @@
       scene.add(rightEdge);
     }
 
-    // Scenery Trees
+    // Trees
     const treeGeo = new THREE.ConeGeometry(2.5, 7, 5);
     const treeMat = new THREE.MeshLambertMaterial({ color: 0x1b5e20 });
 
@@ -189,10 +196,10 @@
       scene.add(treeR);
     }
 
-    // --- Helper to Build Dynamic Car Models with Independent Front Wheels ---
-    function createCarMesh(colorHex) {
-      const carGroup = new THREE.Group(); // Master physics root
-      const visualBody = new THREE.Group(); // Visual mesh that rolls/pitches during turns
+    // --- Car Factory with Turn Signals ---
+    function createCarMesh(colorHex, isPlayer = false) {
+      const carGroup = new THREE.Group();
+      const visualBody = new THREE.Group();
       carGroup.add(visualBody);
 
       const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
@@ -209,7 +216,6 @@
       const wheelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
       wheelGeo.rotateZ(Math.PI / 2);
 
-      // Rear wheels (fixed to body)
       const rearLeft = new THREE.Mesh(wheelGeo, wheelMat);
       rearLeft.position.set(-1.1, 0.4, 1.2);
       visualBody.add(rearLeft);
@@ -218,7 +224,6 @@
       rearRight.position.set(1.1, 0.4, 1.2);
       visualBody.add(rearRight);
 
-      // Front steering wheels (can rotate independently)
       const frontLeftPivot = new THREE.Group();
       frontLeftPivot.position.set(-1.1, 0.4, -1.2);
       const frontLeft = new THREE.Mesh(wheelGeo, wheelMat);
@@ -231,15 +236,39 @@
       frontRightPivot.add(frontRight);
       visualBody.add(frontRightPivot);
 
+      // Turn Signals (Front & Rear)
+      let turnSignalLights = { left: [], right: [] };
+      if (isPlayer) {
+        const signalMatOff = new THREE.MeshBasicMaterial({ color: 0x443300 });
+        const signalGeo = new THREE.BoxGeometry(0.25, 0.15, 0.1);
+
+        // Front Left & Rear Left
+        const fl = new THREE.Mesh(signalGeo, signalMatOff);
+        fl.position.set(-0.9, 0.6, -2.01);
+        const rl = new THREE.Mesh(signalGeo, signalMatOff);
+        rl.position.set(-0.9, 0.6, 2.01);
+        visualBody.add(fl, rl);
+        turnSignalLights.left.push(fl, rl);
+
+        // Front Right & Rear Right
+        const fr = new THREE.Mesh(signalGeo, signalMatOff);
+        fr.position.set(0.9, 0.6, -2.01);
+        const rr = new THREE.Mesh(signalGeo, signalMatOff);
+        rr.position.set(0.9, 0.6, 2.01);
+        visualBody.add(fr, rr);
+        turnSignalLights.right.push(fr, rr);
+      }
+
       return {
         root: carGroup,
         body: visualBody,
-        frontPivots: [frontLeftPivot, frontRightPivot]
+        frontPivots: [frontLeftPivot, frontRightPivot],
+        signals: turnSignalLights
       };
     }
 
     // --- Player Car Setup ---
-    const playerVehicle = createCarMesh(0xcc0000);
+    const playerVehicle = createCarMesh(0xcc0000, true);
     const carGroup = playerVehicle.root;
     scene.add(carGroup);
     
@@ -261,7 +290,6 @@
       const progress = (i / NUM_AI_CARS);
       const laneSide = i % 2 === 0 ? 1 : -1;
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
-
       const baseSpeed = (0.0004 + Math.random() * 0.0003) * 0.2;
 
       aiCars.push({
@@ -290,38 +318,40 @@
 
     // --- Driving Physics Parameters ---
     let speed = 0;
-    let currentSteerAngle = 0; // Dynamic steering wheel rotation
+    let currentSteerAngle = 0;
     let isSpinningOut = false;
     let spinoutTimer = 0;
 
     const BRAKE_POWER = 0.025;
     const FRICTION = 0.991;
     
-    // Smooth Progressive Steering Tuning
+    // Steering Dynamics
     const MAX_STEER_ANGLE = 0.038;
-    const STEER_ACCEL = 0.0022; // Speed up turn as key is held
-    const STEER_DECAY = 0.82;   // Smoothly recenter steering when released
+    const STEER_ACCEL = 0.0018; 
 
-    const keys = { forward: false, backward: false, left: false, right: false, clutch: false };
+    // Turn Signals State
+    let turnSignalMode = 'OFF'; // 'OFF', 'LEFT', 'RIGHT'
+    let signalBlinkTimer = 0;
+    const signalMatOff = new THREE.MeshBasicMaterial({ color: 0x443300 });
+    const signalMatOn = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+
+    const keys = { w: false, s: false, a: false, d: false, shift: false };
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') keys.forward = true;
-      if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.backward = true;
-      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.left = true;
-      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.right = true;
-      if (e.key === 'Shift') keys.clutch = true;
+      if (e.key === 'w' || e.key === 'W') keys.w = true;
+      if (e.key === 's' || e.key === 'S') keys.s = true;
+      if (e.key === 'a' || e.key === 'A') keys.a = true;
+      if (e.key === 'd' || e.key === 'D') keys.d = true;
+      if (e.key === 'Shift') keys.shift = true;
 
-      if (keys.clutch && !isSpinningOut) {
+      // Shift + Up/Down for Gears
+      if (keys.shift && !isSpinningOut) {
         const oldGear = gearList[currentGearIndex];
 
-        if (e.key === 'z' || e.key === 'Z') {
-          if (currentGearIndex < gearList.length - 1) {
-            currentGearIndex++;
-          }
-        } else if (e.key === 'x' || e.key === 'X') {
-          if (currentGearIndex > 0) {
-            currentGearIndex--;
-          }
+        if (e.key === 'ArrowUp') {
+          if (currentGearIndex < gearList.length - 1) currentGearIndex++;
+        } else if (e.key === 'ArrowDown') {
+          if (currentGearIndex > 0) currentGearIndex--;
         }
 
         const newGear = gearList[currentGearIndex];
@@ -331,14 +361,25 @@
           triggerSpinout();
         }
       }
+
+      // Left/Right Arrow Keys for Turn Signals
+      if (!keys.shift) {
+        if (e.key === 'ArrowLeft') {
+          turnSignalMode = turnSignalMode === 'LEFT' ? 'OFF' : 'LEFT';
+          document.getElementById('signal-display').innerText = `SIGNAL: ${turnSignalMode}`;
+        } else if (e.key === 'ArrowRight') {
+          turnSignalMode = turnSignalMode === 'RIGHT' ? 'OFF' : 'RIGHT';
+          document.getElementById('signal-display').innerText = `SIGNAL: ${turnSignalMode}`;
+        }
+      }
     });
 
     window.addEventListener('keyup', (e) => {
-      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') keys.forward = false;
-      if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.backward = false;
-      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.left = false;
-      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.right = false;
-      if (e.key === 'Shift') keys.clutch = false;
+      if (e.key === 'w' || e.key === 'W') keys.w = false;
+      if (e.key === 's' || e.key === 'S') keys.s = false;
+      if (e.key === 'a' || e.key === 'A') keys.a = false;
+      if (e.key === 'd' || e.key === 'D') keys.d = false;
+      if (e.key === 'Shift') keys.shift = false;
     });
 
     function triggerSpinout() {
@@ -371,8 +412,9 @@
           document.getElementById('warning').style.display = 'none';
         }
       } else {
-        if (keys.forward) {
-          if (!keys.clutch && !activeGear.isNeutral) {
+        // Accelerate & Brake (WASD only)
+        if (keys.w) {
+          if (!activeGear.isNeutral) {
             if (activeGear.isReverse) {
               speed = Math.max(speed + activeGear.accel, activeGear.maxSpeed);
             } else {
@@ -383,7 +425,7 @@
           speed *= FRICTION;
         }
 
-        if (keys.backward) {
+        if (keys.s) {
           if (speed > 0) {
             speed = Math.max(0, speed - BRAKE_POWER);
           } else if (speed < 0) {
@@ -393,35 +435,47 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // --- Progressive Smooth Steering Logic ---
-        if (keys.left) {
+        // --- Realistic Turning & Auto-Centering Mechanics ---
+        if (keys.a) {
           currentSteerAngle = Math.min(currentSteerAngle + STEER_ACCEL, MAX_STEER_ANGLE);
-        } else if (keys.right) {
+        } else if (keys.d) {
           currentSteerAngle = Math.max(currentSteerAngle - STEER_ACCEL, -MAX_STEER_ANGLE);
         } else {
-          // Smoothly decay/recenter steering when player releases keys
-          currentSteerAngle *= STEER_DECAY;
+          // Speed-sensitive natural steering return rate (slower when static, smoother when moving)
+          const centeringRate = 0.03 + Math.abs(speed) * 0.12;
+          currentSteerAngle += (0 - currentSteerAngle) * centeringRate;
         }
 
-        // Apply turning scaled with car velocity
+        // Turning power scales dynamically with car momentum
         if (Math.abs(speed) > 0.003) {
           const turnDirection = speed >= 0 ? 1 : -1;
           carGroup.rotation.y += currentSteerAngle * turnDirection * (Math.abs(speed) / 1.1);
         }
       }
 
-      // --- Realistic Visual Body Roll & Front Wheels Angle ---
-      // Rotate front wheel pivots visually
+      // Visual Front Wheel Pivot
       const frontWheelAngle = currentSteerAngle * 12;
       playerVehicle.frontPivots[0].rotation.y = frontWheelAngle;
       playerVehicle.frontPivots[1].rotation.y = frontWheelAngle;
 
-      // Body lean (Roll Z-axis into turn, Pitch X-axis under acceleration/brake)
+      // Realistic Chassis Lean (Roll)
       const targetRoll = -currentSteerAngle * (speed * 1.8);
       playerVehicle.body.rotation.z += (targetRoll - playerVehicle.body.rotation.z) * 0.15;
 
+      // Forward Motion Vector
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
+
+      // --- Turn Signal Blinking System ---
+      signalBlinkTimer++;
+      const isBlinkOn = Math.floor(signalBlinkTimer / 20) % 2 === 0;
+
+      playerVehicle.signals.left.forEach(mesh => {
+        mesh.material = (turnSignalMode === 'LEFT' && isBlinkOn) ? signalMatOn : signalMatOff;
+      });
+      playerVehicle.signals.right.forEach(mesh => {
+        mesh.material = (turnSignalMode === 'RIGHT' && isBlinkOn) ? signalMatOn : signalMatOff;
+      });
 
       // --- Update AI Traffic ---
       aiCars.forEach(ai => {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Physics Driving Simulator with Manual Transmission</title>
+  <title>Physics Driving Simulator with Advanced Transmission</title>
   <style>
     body {
       margin: 0;
@@ -31,15 +31,23 @@
       color: #ffcc00;
       margin-top: 3px;
     }
+    #warning {
+      font-size: 18px;
+      font-weight: bold;
+      color: #ff3333;
+      margin-top: 5px;
+      display: none;
+    }
   </style>
 </head>
 <body>
   <div id="ui">
     <h1 style="margin:0; font-size: 24px;">Physics Driving Simulator</h1>
-    <p style="margin:5px 0 0 0;"><b>W / Up</b> = Throttle | <b>S / Down</b> = Brake / Reverse</p>
-    <p style="margin:2px 0 0 0;"><b>A / D</b> = Steer | <b>Shift</b> = Clutch | <b>Spacebar</b> = Shift Gear</p>
+    <p style="margin:5px 0 0 0;"><b>W / Up</b> = Throttle | <b>S / Down</b> = Brake</p>
+    <p style="margin:2px 0 0 0;"><b>A / D</b> = Steer | <b>Shift</b> = Clutch | <b>Z</b> = Upshift | <b>X</b> = Downshift</p>
     <div id="speedometer">0 MPH</div>
     <div id="gear-display">GEAR: 1</div>
+    <div id="warning">MONEY SHIFT! SPINOUT!</div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -232,25 +240,29 @@
       });
     }
 
-    // --- Driving Physics & Manual Gear System Parameters ---
-    let speed = 0;
-    let steeringInputPower = 0;
-    let currentGear = 1;
+    // --- Gear Index Setup ---
+    const gearList = ['R', 'N', '1', '2', '3', '4', '5'];
+    let currentGearIndex = 2; // Start in 1st gear ('1')
 
-    // Gear properties: [accelPower, maxSpeedCap]
     const gearRatios = {
-      1: { accel: 0.012, maxSpeed: 0.35 },
-      2: { accel: 0.009, maxSpeed: 0.60 },
-      3: { accel: 0.007, maxSpeed: 0.85 },
-      4: { accel: 0.005, maxSpeed: 1.10 },
-      5: { accel: 0.003, maxSpeed: 1.35 }
+      'R': { accel: -0.005, maxSpeed: -0.35, isReverse: true },
+      'N': { accel: 0, maxSpeed: 0, isNeutral: true },
+      '1': { accel: 0.012, maxSpeed: 0.35 },
+      '2': { accel: 0.009, maxSpeed: 0.60 },
+      '3': { accel: 0.007, maxSpeed: 0.85 },
+      '4': { accel: 0.005, maxSpeed: 1.10 },
+      '5': { accel: 0.003, maxSpeed: 1.35 }
     };
 
+    // --- Driving Physics Parameters ---
+    let speed = 0;
+    let steeringInputPower = 0;
+    let isSpinningOut = false;
+    let spinoutTimer = 0;
+    let spinoutVelocity = 0;
+
     const BRAKE_POWER = 0.035;
-    const REVERSE_ACCEL = 0.005;
     const FRICTION = 0.985;
-    const MAX_REVERSE = -0.35;
-    
     const STEER_RAMP_SPEED = 0.015;
     const MAX_STEER_ANGLE = 0.035;
 
@@ -263,11 +275,26 @@
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.right = true;
       if (e.key === 'Shift') keys.clutch = true;
 
-      // Shift Gear with Spacebar (requires Clutch holding)
-      if (e.code === 'Space') {
-        if (keys.clutch) {
-          currentGear = (currentGear % 5) + 1;
-          document.getElementById('gear-display').innerText = `GEAR: ${currentGear}`;
+      // Manual Gear Shift with Z (Upshift) and X (Downshift)
+      if (keys.clutch && !isSpinningOut) {
+        const oldGear = gearList[currentGearIndex];
+
+        if (e.key === 'z' || e.key === 'Z') {
+          if (currentGearIndex < gearList.length - 1) {
+            currentGearIndex++;
+          }
+        } else if (e.key === 'x' || e.key === 'X') {
+          if (currentGearIndex > 0) {
+            currentGearIndex--;
+          }
+        }
+
+        const newGear = gearList[currentGearIndex];
+        document.getElementById('gear-display').innerText = `GEAR: ${newGear}`;
+
+        // Money-Shift Spin-Out Detection (5th directly to 1st or R at high speeds)
+        if (oldGear === '5' && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 0.7) {
+          triggerSpinout();
         }
       }
     });
@@ -280,6 +307,13 @@
       if (e.key === 'Shift') keys.clutch = false;
     });
 
+    function triggerSpinout() {
+      isSpinningOut = true;
+      spinoutTimer = 120; // Spinout lasts ~2 seconds
+      spinoutVelocity = speed;
+      document.getElementById('warning').style.display = 'block';
+    }
+
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -290,44 +324,64 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      const activeGear = gearRatios[currentGear];
+      const currentGearKey = gearList[currentGearIndex];
+      const activeGear = gearRatios[currentGearKey];
 
-      // Acceleration, Clutch, and Braking Physics
-      if (keys.forward) {
-        if (speed < 0) {
-          speed += BRAKE_POWER;
-        } else if (!keys.clutch) {
-          // Accelerate only when clutch is NOT pressed
-          speed = Math.min(speed + activeGear.accel, activeGear.maxSpeed);
+      if (isSpinningOut) {
+        // Spin-Out Sequence: Lock wheels and rotate vehicle wildly
+        carGroup.rotation.y += 0.25;
+        speed *= 0.96; // Friction slowly stops locked wheels
+        spinoutTimer--;
+
+        if (spinoutTimer <= 0) {
+          isSpinningOut = false;
+          speed = 0;
+          document.getElementById('warning').style.display = 'none';
         }
-      } else if (keys.backward) {
-        if (speed > 0) {
-          speed -= BRAKE_POWER;
+      } else {
+        // Normal Acceleration & Braking Physics
+        if (keys.forward) {
+          if (!keys.clutch && !activeGear.isNeutral) {
+            if (activeGear.isReverse) {
+              // Accelerate backwards in Reverse gear
+              speed = Math.max(speed + activeGear.accel, activeGear.maxSpeed);
+            } else {
+              // Accelerate forward in 1st - 5th gears
+              speed = Math.min(speed + activeGear.accel, activeGear.maxSpeed);
+            }
+          }
         } else {
-          speed = Math.max(speed - REVERSE_ACCEL, MAX_REVERSE);
+          speed *= FRICTION;
         }
-      } else {
-        speed *= FRICTION;
+
+        // Dedicated Brake Control (S / Down Arrow)
+        if (keys.backward) {
+          if (speed > 0) {
+            speed = Math.max(0, speed - BRAKE_POWER);
+          } else if (speed < 0) {
+            speed = Math.min(0, speed + BRAKE_POWER);
+          }
+        }
+
+        if (Math.abs(speed) < 0.001) speed = 0;
+
+        // Steering Logic
+        if (keys.left) {
+          steeringInputPower = Math.min(steeringInputPower + STEER_RAMP_SPEED, 1.0);
+        } else if (keys.right) {
+          steeringInputPower = Math.max(steeringInputPower - STEER_RAMP_SPEED, -1.0);
+        } else {
+          steeringInputPower *= 0.75;
+        }
+
+        if (Math.abs(speed) > 0.005) {
+          const turnDirection = speed >= 0 ? 1 : -1;
+          const currentTurnRate = steeringInputPower * MAX_STEER_ANGLE;
+          carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / 1.35);
+        }
       }
 
-      if (Math.abs(speed) < 0.001) speed = 0;
-
-      // Steering Logic
-      if (keys.left) {
-        steeringInputPower = Math.min(steeringInputPower + STEER_RAMP_SPEED, 1.0);
-      } else if (keys.right) {
-        steeringInputPower = Math.max(steeringInputPower - STEER_RAMP_SPEED, -1.0);
-      } else {
-        steeringInputPower *= 0.75;
-      }
-
-      if (Math.abs(speed) > 0.005) {
-        const turnDirection = speed >= 0 ? 1 : -1;
-        const currentTurnRate = steeringInputPower * MAX_STEER_ANGLE;
-        carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / 1.35);
-      }
-
-      // Movement
+      // Movement Vector
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
@@ -346,7 +400,6 @@
         const lookTarget = pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, ai.laneOffset);
         ai.mesh.lookAt(lookTarget);
 
-        // Distance check to react to Player's Car
         const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
         if (distToPlayer < 18) {
           ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.00002);

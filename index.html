@@ -72,10 +72,6 @@
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
 
-    // Dynamic Frustum Culling Engine Setup
-    const cameraFrustum = new THREE.Frustum();
-    const projScreenMatrix = new THREE.Matrix4();
-
     // --- Lighting ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
@@ -104,13 +100,12 @@
     grass.receiveShadow = true;
     scene.add(grass);
 
-    // --- Two-Way Road Construction ---
-    const ROAD_WIDTH = 22; // Expanded for proper 2-lane traffic
-    const CLEARANCE_MARGIN = 5.0; // Hard buffer zone ensuring trees never intersect the road
-    const MIN_TREE_DISTANCE = (ROAD_WIDTH / 2) + CLEARANCE_MARGIN; 
-
+    // --- Road Setup ---
+    const ROAD_WIDTH = 20; // Slightly wider for 2-way traffic safety
+    const CLEARANCE_MARGIN = 4.0; // Strict margin so trees never touch/overlap the road
     const NUM_POINTS = 300;
     const pathPoints = [];
+
     const radiusX = 700 + Math.random() * 200;
     const radiusZ = 700 + Math.random() * 200;
 
@@ -163,7 +158,8 @@
     const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00, side: THREE.DoubleSide });
     const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
 
-    const dashGeo = new THREE.PlaneGeometry(0.35, 3);
+    // Double Center Yellow Lines for 2-Way Traffic
+    const dashGeo = new THREE.PlaneGeometry(0.2, 3);
     dashGeo.rotateX(-Math.PI / 2);
     const edgeGeo = new THREE.PlaneGeometry(0.35, 3.5);
     edgeGeo.rotateX(-Math.PI / 2);
@@ -174,25 +170,22 @@
       const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-      // Double Center Yellow Lines for Two-Way Traffic Separation
       if (i % 3 === 0) {
-        const centerLeft = new THREE.Mesh(dashGeo, lineMatYellow);
-        const centerRight = new THREE.Mesh(dashGeo, lineMatYellow);
-        
-        const posL = pt.clone().addScaledVector(normal, 0.25);
-        const nextL = nextPt.clone().addScaledVector(normal, 0.25);
-        centerLeft.position.set(posL.x, GROUND_Y + 0.02, posL.z);
-        centerLeft.lookAt(nextL.x, GROUND_Y + 0.02, nextL.z);
+        // Double yellow center divider
+        const yellowLeft = new THREE.Mesh(dashGeo, lineMatYellow);
+        const yLPos = pt.clone().addScaledVector(normal, 0.25);
+        yellowLeft.position.set(yLPos.x, GROUND_Y + 0.02, yLPos.z);
+        yellowLeft.lookAt(nextPt.clone().addScaledVector(normal, 0.25));
 
-        const posR = pt.clone().addScaledVector(normal, -0.25);
-        const nextR = nextPt.clone().addScaledVector(normal, -0.25);
-        centerRight.position.set(posR.x, GROUND_Y + 0.02, posR.z);
-        centerRight.lookAt(nextR.x, GROUND_Y + 0.02, nextR.z);
+        const yellowRight = new THREE.Mesh(dashGeo, lineMatYellow);
+        const yRPos = pt.clone().addScaledVector(normal, -0.25);
+        yellowRight.position.set(yRPos.x, GROUND_Y + 0.02, yRPos.z);
+        yellowRight.lookAt(nextPt.clone().addScaledVector(normal, -0.25));
 
-        scene.add(centerLeft, centerRight);
+        scene.add(yellowLeft, yellowRight);
       }
 
-      // Outer White Shoulder Lines
+      // Outer White Edges
       const leftPos = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       const leftNext = nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       const leftEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
@@ -208,121 +201,126 @@
       scene.add(rightEdge);
     }
 
-    // --- Instanced & Occlusion-Culled Tree System ---
-    const forestTrees = [];
+    // --- High-Performance Instanced Detailed Tree System with View Distance Frustum/LOD Culling ---
     const barkMaterial = new THREE.MeshLambertMaterial({ color: 0x3d2314 });
-    const foliageMats = [
-      new THREE.MeshLambertMaterial({ color: 0x133b1e }),
-      new THREE.MeshLambertMaterial({ color: 0x1c542c }),
-      new THREE.MeshLambertMaterial({ color: 0x276b3a })
-    ];
+    const foliageMaterial1 = new THREE.MeshLambertMaterial({ color: 0x133b1e });
+    const foliageMaterial2 = new THREE.MeshLambertMaterial({ color: 0x1c542c });
 
-    function createDetailedTreeMesh() {
-      const treeGroup = new THREE.Group();
+    // Build Single Tree Component Geometries
+    const trunkGeo = new THREE.CylinderGeometry(0.4, 0.8, 6, 7);
+    trunkGeo.translate(0, 3, 0);
 
-      const trunkGeo = new THREE.CylinderGeometry(0.4, 0.8, 6, 8);
-      const trunk = new THREE.Mesh(trunkGeo, barkMaterial);
-      trunk.position.y = 3;
-      trunk.castShadow = true;
-      trunk.receiveShadow = true;
-      treeGroup.add(trunk);
+    const foliage1Geo = new THREE.ConeGeometry(3.5, 4.5, 7);
+    foliage1Geo.translate(0, 5.5, 0);
 
-      for (let i = 0; i < 4; i++) {
-        const mat = foliageMats[i % foliageMats.length];
-        const radius = 3.5 - (i * 0.7);
-        const height = 4.5 - (i * 0.5);
-        const coneGeo = new THREE.ConeGeometry(radius, height, 7);
-        const cone = new THREE.Mesh(coneGeo, mat);
-        cone.position.y = 4.5 + (i * 2.1);
-        cone.castShadow = true;
-        cone.receiveShadow = true;
-        treeGroup.add(cone);
-      }
-      return treeGroup;
-    }
+    const foliage2Geo = new THREE.ConeGeometry(2.8, 4.0, 7);
+    foliage2Geo.translate(0, 7.5, 0);
 
-    // Mathematical verification ensuring absolute clearance from road ribbons
-    function isFarFromRoad(x, z) {
-      const checkPt = new THREE.Vector3(x, GROUND_Y, z);
-      // Fast sampling check against curve
-      for (let i = 0; i < curvePoints.length; i += 5) {
-        if (curvePoints[i].distanceToSquared(checkPt) < (MIN_TREE_DISTANCE * MIN_TREE_DISTANCE)) {
-          return false;
-        }
-      }
-      return true;
-    }
+    const foliage3Geo = new THREE.ConeGeometry(2.0, 3.5, 7);
+    foliage3Geo.translate(0, 9.5, 0);
 
-    function buildForestWorld() {
-      const treeTemplate = createDetailedTreeMesh();
-      const TOTAL_TREES = 1800;
+    const MAX_FOREST_TREES = 2500;
+    const trunkInstancedMesh = new THREE.InstancedMesh(trunkGeo, barkMaterial, MAX_FOREST_TREES);
+    const foliage1InstancedMesh = new THREE.InstancedMesh(foliage1Geo, foliageMaterial1, MAX_FOREST_TREES);
+    const foliage2InstancedMesh = new THREE.InstancedMesh(foliage2Geo, foliageMaterial2, MAX_FOREST_TREES);
+    const foliage3InstancedMesh = new THREE.InstancedMesh(foliage3Geo, foliageMaterial1, MAX_FOREST_TREES);
 
-      for (let i = 0; i < TOTAL_TREES; i++) {
+    trunkInstancedMesh.castShadow = true;
+    trunkInstancedMesh.receiveShadow = true;
+    foliage1InstancedMesh.castShadow = true;
+    foliage2InstancedMesh.castShadow = true;
+    foliage3InstancedMesh.castShadow = true;
+
+    scene.add(trunkInstancedMesh, foliage1InstancedMesh, foliage2InstancedMesh, foliage3InstancedMesh);
+
+    const allTreeData = [];
+    const activeViewTrees = [];
+    const treeDummyMatrix = new THREE.Matrix4();
+    const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+
+    function buildDenseForestData() {
+      const minSafeDistance = (ROAD_WIDTH / 2) + CLEARANCE_MARGIN; // Strictly outside road boundaries
+
+      for (let i = 0; i < MAX_FOREST_TREES; i++) {
         const u = Math.random();
         const roadPt = roadCurve.getPointAt(u);
         const tangent = roadCurve.getTangentAt(u);
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
         const side = Math.random() < 0.5 ? 1 : -1;
-        const offsetDist = MIN_TREE_DISTANCE + Math.random() * 350;
-        const scatter = (Math.random() - 0.5) * 40;
+        // Guarantees tree stem + foliage radius NEVER spills onto road surface
+        const distance = minSafeDistance + Math.random() * 400;
+        const scatter = (Math.random() - 0.5) * 20;
 
-        const treeX = roadPt.x + (normal.x * offsetDist * side) + scatter;
-        const treeZ = roadPt.z + (normal.z * offsetDist * side) + scatter;
+        const treeX = roadPt.x + (normal.x * distance * side) + scatter;
+        const treeZ = roadPt.z + (normal.z * distance * side) + scatter;
+        const scale = 0.8 + Math.random() * 0.6;
+        const rotY = Math.random() * Math.PI * 2;
 
-        // Verify bounds strictly before instantiating
-        if (isFarFromRoad(treeX, treeZ)) {
-          const treeInstance = treeTemplate.clone();
-          treeInstance.position.set(treeX, GROUND_Y, treeZ);
-
-          const scale = 0.8 + Math.random() * 0.6;
-          treeInstance.scale.set(scale, scale, scale);
-          treeInstance.rotation.y = Math.random() * Math.PI * 2;
-
-          // Default state: Hidden to prevent lag
-          treeInstance.visible = false;
-          scene.add(treeInstance);
-
-          // Bound sphere for frustum culling
-          const boundingSphere = new THREE.Sphere(treeInstance.position, 12 * scale);
-
-          forestTrees.push({
-            mesh: treeInstance,
-            position: new THREE.Vector3(treeX, GROUND_Y, treeZ),
-            boundingSphere: boundingSphere,
-            radius: 0.9 * scale,
-            height: 12 * scale
-          });
-        }
+        allTreeData.push({
+          position: new THREE.Vector3(treeX, GROUND_Y, treeZ),
+          scale: scale,
+          rotationY: rotY,
+          radius: 1.0 * scale
+        });
       }
     }
 
-    buildForestWorld();
+    buildDenseForestData();
 
-    // High-performance dynamic View-Frustum & Distance Culler
-    function cullTreesInView() {
+    // View Distance (Frustum/LOD) Culling function for smooth 60 FPS
+    const TREE_RENDER_DISTANCE = 220; // Only renders trees when within 220 units of player
+    const cameraFrustum = new THREE.Frustum();
+    const projScreenMatrix = new THREE.Matrix4();
+
+    function updateTreeVisibilityCulling() {
       projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       cameraFrustum.setFromProjectionMatrix(projScreenMatrix);
 
-      const camPos = camera.position;
-      const MAX_DRAW_DISTANCE = 220.0; // Dynamic lod loading cutoff radius
+      activeViewTrees.length = 0;
+      let visibleCount = 0;
 
-      for (let i = 0; i < forestTrees.length; i++) {
-        const tree = forestTrees[i];
-        const distSq = camPos.distanceToSquared(tree.position);
+      for (let i = 0; i < allTreeData.length; i++) {
+        const tree = allTreeData[i];
+        const distToCam = tree.position.distanceTo(camera.position);
 
-        // Distance check first (fast numeric drop)
-        if (distSq < MAX_DRAW_DISTANCE * MAX_DRAW_DISTANCE) {
-          // Viewport Frustum frustum-intersection check
-          tree.mesh.visible = cameraFrustum.intersectsSphere(tree.boundingSphere);
-        } else {
-          tree.mesh.visible = false;
+        // Render Condition: Within view range distance AND inside camera viewing frustum
+        if (distToCam < TREE_RENDER_DISTANCE && cameraFrustum.containsPoint(tree.position)) {
+          treeDummyMatrix.makeRotationY(tree.rotationY);
+          treeDummyMatrix.scale(new THREE.Vector3(tree.scale, tree.scale, tree.scale));
+          treeDummyMatrix.setPosition(tree.position);
+
+          trunkInstancedMesh.setMatrixAt(visibleCount, treeDummyMatrix);
+          foliage1InstancedMesh.setMatrixAt(visibleCount, treeDummyMatrix);
+          foliage2InstancedMesh.setMatrixAt(visibleCount, treeDummyMatrix);
+          foliage3InstancedMesh.setMatrixAt(visibleCount, treeDummyMatrix);
+
+          activeViewTrees.push(tree);
+          visibleCount++;
         }
       }
+
+      // Hide remaining unused instance slots
+      for (let i = visibleCount; i < MAX_FOREST_TREES; i++) {
+        trunkInstancedMesh.setMatrixAt(i, hiddenMatrix);
+        foliage1InstancedMesh.setMatrixAt(i, hiddenMatrix);
+        foliage2InstancedMesh.setMatrixAt(i, hiddenMatrix);
+        foliage3InstancedMesh.setMatrixAt(i, hiddenMatrix);
+      }
+
+      trunkInstancedMesh.count = visibleCount;
+      foliage1InstancedMesh.count = visibleCount;
+      foliage2InstancedMesh.count = visibleCount;
+      foliage3InstancedMesh.count = visibleCount;
+
+      trunkInstancedMesh.instanceMatrix.needsUpdate = true;
+      foliage1InstancedMesh.instanceMatrix.needsUpdate = true;
+      foliage2InstancedMesh.instanceMatrix.needsUpdate = true;
+      foliage3InstancedMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // --- Particle System ---
-    const sparkCount = 400;
+    // --- Particle System for Friction Sparks & Explosions ---
+    const sparkCount = 350;
     const sparkGeo = new THREE.BufferGeometry();
     const sparkPositions = new Float32Array(sparkCount * 3);
     const sparkVelocities = [];
@@ -374,7 +372,7 @@
       sparkParticles.geometry.attributes.position.needsUpdate = true;
     }
 
-    // --- Debris System ---
+    // --- Debris Sub-Mesh System ---
     const activeDebrisList = [];
 
     function spawnDebris(pos, baseVel, colorHex, partScale = 1.0) {
@@ -396,11 +394,7 @@
           Math.random() * 0.5 + 0.2,
           (Math.random() - 0.5) * 0.6
         )),
-        angularVel: new THREE.Vector3(
-          Math.random() * 0.3,
-          Math.random() * 0.3,
-          Math.random() * 0.3
-        ),
+        angularVel: new THREE.Vector3(Math.random() * 0.3, Math.random() * 0.3, Math.random() * 0.3),
         life: 250
       });
     }
@@ -454,12 +448,11 @@
       const signalMatLeft = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
       const signalMatRight = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
 
-      // Chassis Base
       const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.2, 3.8), darkMat);
       chassis.position.y = 0.25;
       carGroup.add(chassis);
 
-      // Detailed Interior Mechanics (Remains intact after exterior breaks off)
+      // Interior Frame (Always remains after shell detaches)
       const interiorGroup = new THREE.Group();
       const dashboard = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 0.5), dashMat);
       dashboard.position.set(0, 0.75, -0.7);
@@ -524,15 +517,6 @@
       const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat);
       rearBumper.position.set(0, 0.35, 2.05);
       visualBody.add(rearBumper);
-
-      const mirrorGeo = new THREE.BoxGeometry(0.2, 0.15, 0.25);
-      const mirrorL = new THREE.Mesh(mirrorGeo, bumperMat);
-      mirrorL.position.set(-0.95, 1.05, -0.8);
-      visualBody.add(mirrorL);
-
-      const mirrorR = new THREE.Mesh(mirrorGeo, bumperMat);
-      mirrorR.position.set(0.95, 1.05, -0.8);
-      visualBody.add(mirrorR);
 
       // Lights
       const headlightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
@@ -645,7 +629,7 @@
       };
     }
 
-    // Setup Player (Placed in Right-Hand Lane)
+    // Setup Player (Drives on Right Lane by default)
     const playerVehicleMesh = createCarMesh(0xcc0000);
     const playerPhysics = createPhysicsObject(playerVehicleMesh);
     const carGroup = playerPhysics.mesh;
@@ -654,12 +638,10 @@
     const startPos = roadCurve.getPointAt(0);
     const startTangent = roadCurve.getTangentAt(0);
     const startNormal = new THREE.Vector3(-startTangent.z, 0, startTangent.x).normalize();
+    carGroup.position.copy(startPos).addScaledVector(startNormal, -ROAD_WIDTH / 4); // Right Lane
+    carGroup.lookAt(startPos.clone().add(startTangent).addScaledVector(startNormal, -ROAD_WIDTH / 4));
 
-    // Place player nicely inside right lane (+Lane Offset)
-    carGroup.position.copy(startPos).addScaledVector(startNormal, -ROAD_WIDTH / 4);
-    carGroup.lookAt(carGroup.position.clone().add(startTangent));
-
-    // Setup Two-Way AI Traffic Engine
+    // Setup AI Traffic for TWO-WAY ROAD
     const aiCars = [];
     const trafficColors = [0x0055ff, 0xffaa00, 0x888888, 0x00aa44, 0x9900cc, 0xff3399, 0x00cccc];
     const NUM_AI_CARS = 22;
@@ -671,11 +653,11 @@
       scene.add(aiObj.mesh);
 
       const progress = (i / NUM_AI_CARS);
-      
-      // TWO-WAY TRAFFIC LOGIC: 
-      // Side 1  = Right Lane (Drives along tangent +1)
-      // Side -1 = Left Oncoming Lane (Drives opposite tangent -1)
-      const laneSide = (i % 2 === 0) ? 1 : -1;
+      // TWO-WAY ROAD LANE LOGIC:
+      // Lane Direction 1 (Right Lane) drives forward (direction = 1)
+      // Lane Direction -1 (Left Lane) drives oncoming towards player (direction = -1)
+      const laneSide = (i % 2 === 0) ? -1 : 1; 
+      const direction = laneSide < 0 ? 1 : -1;
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
       const baseSpeed = 0.00025 + Math.random() * 0.00015;
 
@@ -684,10 +666,8 @@
         progress: progress,
         targetSpeed: baseSpeed,
         currentSpeed: baseSpeed,
-        laneSide: laneSide,
         laneOffset: laneOffset,
-        targetLaneOffset: laneOffset,
-        direction: laneSide, // Defines two-way heading vector
+        direction: direction, // 1 = Forward, -1 = Oncoming Traffic
         isBraking: false,
         inCrashPhysics: false,
         crashSeverity: 'none',
@@ -696,7 +676,7 @@
       });
     }
 
-    // Controls System
+    // Controls & Transmission
     const gearList = ['R', 'N', '1', '2', '3', '4', '5', '6', '7'];
     let currentGearIndex = 2;
 
@@ -779,7 +759,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Rigid Dynamics Solver
+    // --- Physics Engine ---
     function updatePhysicsBody(body) {
       body.mesh.position.add(body.velocity);
       body.velocity.y += GRAVITY;
@@ -816,11 +796,9 @@
       }
     }
 
-    // SAT OBB Collision Detection
     function checkOBBCollision(bodyA, bodyB) {
       const posA = bodyA.mesh.position;
       const posB = bodyB.mesh.position;
-
       const dist = posA.distanceTo(posB);
       if (dist > 5.0) return null;
 
@@ -837,16 +815,12 @@
       return null;
     }
 
-    // Tree Solid Boundary Hitbox Collision Resolution
+    // --- Tree Hitbox Collision Solver using Active Rendered Trees ---
     function checkTreeCollisions(body) {
       const pos = body.mesh.position;
-      
-      for (let i = 0; i < forestTrees.length; i++) {
-        const tree = forestTrees[i];
-        
-        // Skip collision calculations if tree is far or culled
-        if (!tree.mesh.visible) continue;
 
+      for (let i = 0; i < activeViewTrees.length; i++) {
+        const tree = activeViewTrees[i];
         const dx = pos.x - tree.position.x;
         const dz = pos.z - tree.position.z;
         const distSq = dx * dx + dz * dz;
@@ -863,6 +837,7 @@
 
           const impactNormal = new THREE.Vector3(nx, 0, nz);
           const impactPoint = body.mesh.position.clone().subScaledVector(impactNormal, 1.2);
+
           const currentVel = body.velocity.length() + (body === playerPhysics ? Math.abs(speed) : 0);
 
           emitSparks(impactPoint, Math.min(80, Math.floor(currentVel * 100) + 10));
@@ -889,7 +864,6 @@
       }
     }
 
-    // Engine Blast Shockwave
     function triggerEngineExplosion(victimBody, attackerBody, impactPoint) {
       victimBody.isExploding = true;
       emitSparks(impactPoint, 150, true);
@@ -915,7 +889,6 @@
       }
     }
 
-    // Disassembly Break-Apart Routine
     function disintegrateVehicle(carMesh, pos, velocity) {
       const parts = carMesh.detachables;
       const colorHex = carMesh.colorHex;
@@ -946,7 +919,6 @@
       }
     }
 
-    // Multi-Vehicle Collision Engine
     function handleAllVehicleCollisions() {
       const allVehicles = [playerPhysics, ...aiCars];
 
@@ -980,7 +952,8 @@
 
             if (impactForce < 0.25) {
               emitSparks(impactPoint, 8);
-            } else if (impactForce < 0.65) {
+            } 
+            else if (impactForce < 0.65) {
               emitSparks(impactPoint, 35);
 
               const impulse = collisionNormal.clone().multiplyScalar(impactForce * 0.35);
@@ -1010,7 +983,8 @@
               if (Math.random() > 0.5) {
                 spawnDebris(impactPoint, relativeVelocity, bodyB.vehicle.colorHex, 0.8);
               }
-            } else {
+            } 
+            else {
               emitSparks(impactPoint, 100);
 
               const groundedImpulse = collisionNormal.clone().multiplyScalar(impactForce * 0.45);
@@ -1054,12 +1028,11 @@
       }
     }
 
-    // Two-Way Aware Swerve & Brake Collision Avoidance System
     function updateAIAvoidanceAndSteering(ai) {
       if (ai.inCrashPhysics) return;
 
       const aiPos = ai.mesh.position;
-      const aiForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), ai.mesh.rotation.y);
+      const aiForward = ai.mesh.getWorldDirection(new THREE.Vector3()).negate();
 
       let obstacleDetected = false;
       let swerveDir = 0;
@@ -1104,7 +1077,7 @@
       const activeGear = gearRatios[currentGearKey];
       let playerIsBraking = false;
 
-      // Player Steering & Velocity Control
+      // Player Movement
       if (isSpinningOut) {
         speed *= 0.96;
         spinoutTimer--;
@@ -1157,14 +1130,16 @@
         carGroup.position.addScaledVector(forwardVector, speed);
       }
 
-      // Physics Rigidbodies & Environment Bounds
+      // Dynamic Camera View Frustum Culling (High Performance Tree Render Engine)
+      updateTreeVisibilityCulling();
+
       updatePhysicsBody(playerPhysics);
       checkTreeCollisions(playerPhysics);
 
       updateSparks();
       updateDebris();
 
-      // AI Traffic Logic with Two-Way Directions
+      // Two-Way AI Traffic Updates
       aiCars.forEach(ai => {
         if (ai.crashSeverity === 'minor') {
           ai.recoverTimer--;
@@ -1184,7 +1159,6 @@
         } else {
           updateAIAvoidanceAndSteering(ai);
 
-          // Advance along road ribbon using directional polarity (+1 or -1)
           ai.progress += ai.currentSpeed * ai.direction;
           if (ai.progress > 1) ai.progress -= 1;
           if (ai.progress < 0) ai.progress += 1;
@@ -1196,10 +1170,8 @@
           const effectiveLaneOffset = ai.laneOffset + ai.swerveSteer;
           ai.mesh.position.copy(pos).addScaledVector(normal, effectiveLaneOffset);
 
-          // Correct Two-Way Facing Vector LookAt Calculation
-          const forwardDirection = tangent.clone().multiplyScalar(ai.direction);
-          const lookAheadPt = pos.clone().addScaledVector(forwardDirection, 1.0).addScaledVector(normal, effectiveLaneOffset);
-          ai.mesh.lookAt(lookAheadPt);
+          const lookTarget = pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, effectiveLaneOffset);
+          ai.mesh.lookAt(lookTarget);
         }
 
         if (ai.isExploding) {
@@ -1212,7 +1184,7 @@
 
       handleAllVehicleCollisions();
 
-      // Lights & Mechanical Visuals
+      // Visual Updates
       const activeBrakeMaterial = playerIsBraking ? playerVehicleMesh.activeMat : playerVehicleMesh.idleMat;
       playerVehicleMesh.brakeLights.forEach(light => light.material = activeBrakeMaterial);
 
@@ -1230,18 +1202,15 @@
       const targetRoll = -currentSteerAngle * (speed * 2.2);
       playerVehicleMesh.body.rotation.z += (targetRoll - playerVehicleMesh.body.rotation.z) * 0.12;
 
-      // Tracking Camera & Shadow Follow Center
+      // Camera & Lighting Alignment
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;
-      dirLight.position.set(carGroup.position.x + 80, 180, carGroup.position.z + 80);
+      dirLight.position.set(carGroup.position.x + 60, 160, carGroup.position.z + 60);
       dirLight.target = carGroup;
 
       const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       camera.lookAt(carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0)));
-
-      // Perform View Frustum Culling on Forest Trees prior to render step
-      cullTreesInView();
 
       const mph = Math.round(Math.abs(speed) * 80);
       document.getElementById('speedometer').innerText = `${mph} MPH`;

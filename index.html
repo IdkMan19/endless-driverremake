@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Curved Endless Driver with AI Traffic</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #0b0b1a;
+      font-family: sans-serif;
+    }
+    #ui {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #fff;
+      text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h1 style="margin:0; font-size: 24px;">Endless Curved Drive</h1>
+    <p style="margin:5px 0 0 0;">Use <b>A / D</b> or <b>Left / Right Arrows</b> to steer.</p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
+    // --- Scene Setup ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0b1a);
+    scene.fog = new THREE.FogExp2(0x0b0b1a, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // --- Lighting ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(0, 20, 10);
+    scene.add(dirLight);
+
+    // --- Road & Ground Setup ---
+    const ROAD_WIDTH = 12;
+    const ROAD_SEGMENTS = 100;
+    const SEGMENT_LENGTH = 4;
+
+    // Build road ribbon from connected segment points
+    const roadGeometry = new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_SEGMENTS * SEGMENT_LENGTH, 1, ROAD_SEGMENTS);
+    roadGeometry.rotateX(-Math.PI / 2);
+    const roadMaterial = new THREE.MeshLambertMaterial({ color: 0x222228, wireframe: false });
+    const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
+    scene.add(roadMesh);
+
+    // Grass plane
+    const grassGeo = new THREE.PlaneGeometry(400, 400);
+    const grassMat = new THREE.MeshLambertMaterial({ color: 0x112211 });
+    const grass = new THREE.Mesh(grassGeo, grassMat);
+    grass.rotation.x = -Math.PI / 2;
+    grass.position.y = -0.05;
+    scene.add(grass);
+
+    // --- Player Car ---
+    const carGroup = new THREE.Group();
+    const carBodyMat = new THREE.MeshLambertMaterial({ color: 0xd32f2f });
+    const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), carBodyMat);
+    carBody.position.y = 0.5;
+    carGroup.add(carBody);
+
+    const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 2), cabinMat);
+    cabin.position.set(0, 1.1, -0.2);
+    carGroup.add(cabin);
+
+    scene.add(carGroup);
+
+    // --- Scenery (Trees) ---
+    const treeGeo = new THREE.ConeGeometry(2, 6, 5);
+    const treeMat = new THREE.MeshLambertMaterial({ color: 0x0a4d0a });
+    const trees = [];
+
+    for (let i = 0; i < 40; i++) {
+      const tree = new THREE.Mesh(treeGeo, treeMat);
+      const side = Math.random() > 0.5 ? 1 : -1;
+      tree.position.set(side * (ROAD_WIDTH / 2 + 4 + Math.random() * 15), 3, -i * 10);
+      scene.add(tree);
+      trees.push(tree);
+    }
+
+    // --- AI Traffic ---
+    const trafficCars = [];
+    const trafficMat = new THREE.MeshLambertMaterial({ color: 0x3366cc });
+
+    function createTrafficCar(zPos) {
+      const car = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), trafficMat);
+      body.position.y = 0.5;
+      car.add(body);
+      const topCabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 2), cabinMat);
+      topCabin.position.set(0, 1.1, -0.2);
+      car.add(topCabin);
+
+      scene.add(car);
+
+      trafficCars.push({
+        mesh: car,
+        x: (Math.random() - 0.5) * (ROAD_WIDTH - 4),
+        z: zPos,
+        speed: 0.2 + Math.random() * 0.2
+      });
+    }
+
+    createTrafficCar(-50);
+    createTrafficCar(-120);
+
+    // --- Curve & Motion Logic ---
+    let distanceTraveled = 0;
+    let carX = 0;
+    const speed = 0.8;
+    const keys = { left: false, right: false };
+
+    // Function that calculates road bend X position based on Z depth
+    function getRoadCurveX(z) {
+      const worldZ = z - distanceTraveled;
+      return Math.sin(worldZ * 0.015) * 25 + Math.sin(worldZ * 0.005) * 15;
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'a' || e.key === 'ArrowLeft') keys.left = true;
+      if (e.key === 'd' || e.key === 'ArrowRight') keys.right = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'a' || e.key === 'ArrowLeft') keys.left = false;
+      if (e.key === 'd' || e.key === 'ArrowRight') keys.right = false;
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- Main Game Loop ---
+    function animate() {
+      requestAnimationFrame(animate);
+
+      distanceTraveled += speed;
+
+      // Handle Steering
+      if (keys.left) carX -= 0.15;
+      if (keys.right) carX += 0.15;
+      carX = Math.max(-ROAD_WIDTH / 2 + 1.2, Math.min(ROAD_WIDTH / 2 - 1.2, carX));
+
+      // Calculate current curve offset at the player's position
+      const currentRoadX = getRoadCurveX(0);
+      carGroup.position.x = currentRoadX + carX;
+      carGroup.position.z = 0;
+
+      // Calculate road angle for rotation
+      const nextRoadX = getRoadCurveX(-5);
+      const angle = Math.atan2(nextRoadX - currentRoadX, -5);
+      carGroup.rotation.y = angle;
+
+      // Camera Follows
+      camera.position.x = carGroup.position.x * 0.8;
+      camera.position.y = 3.5;
+      camera.position.z = 7;
+      camera.lookAt(carGroup.position.x, 1.5, -10);
+
+      // --- Deform Road Mesh Vertices for Curves ---
+      const positionAttr = roadGeometry.attributes.position;
+      for (let i = 0; i <= ROAD_SEGMENTS; i++) {
+        const segZ = -i * SEGMENT_LENGTH;
+        const curveX = getRoadCurveX(segZ);
+
+        // Vertex pair (left and right side of road)
+        positionAttr.setX(i * 2, curveX - ROAD_WIDTH / 2);
+        positionAttr.setX(i * 2 + 1, curveX + ROAD_WIDTH / 2);
+        positionAttr.setZ(i * 2, segZ);
+        positionAttr.setZ(i * 2 + 1, segZ);
+      }
+      positionAttr.needsUpdate = true;
+
+      // --- Update Scenery along Curve ---
+      trees.forEach((tree) => {
+        tree.position.z += speed;
+        const curveX = getRoadCurveX(tree.position.z);
+        
+        // Lock tree relative to curve
+        if (!tree.userData.sideOffset) {
+          tree.userData.sideOffset = tree.position.x;
+        }
+        tree.position.x = curveX + tree.userData.sideOffset;
+
+        // Loop trees to the back
+        if (tree.position.z > 10) {
+          tree.position.z = -ROAD_SEGMENTS * SEGMENT_LENGTH;
+        }
+      });
+
+      // --- AI Traffic Logic ---
+      trafficCars.forEach((ai) => {
+        ai.z += speed - ai.speed;
+        const curveX = getRoadCurveX(ai.z);
+
+        // React to Player
+        const distToPlayer = Math.abs(ai.z - carGroup.position.z);
+        if (distToPlayer < 20) {
+          if (carX > ai.x) {
+            ai.x -= 0.05; // Swerve away left
+          } else {
+            ai.x += 0.05; // Swerve away right
+          }
+        }
+
+        ai.x = Math.max(-ROAD_WIDTH / 2 + 1.5, Math.min(ROAD_WIDTH / 2 - 1.5, ai.x));
+        ai.mesh.position.x = curveX + ai.x;
+        ai.mesh.position.z = ai.z;
+
+        // Respawn AI ahead
+        if (ai.z > 10) {
+          ai.z = -ROAD_SEGMENTS * SEGMENT_LENGTH;
+          ai.x = (Math.random() - 0.5) * (ROAD_WIDTH - 4);
+        }
+      });
+
+      // Keep grass floor locked under camera
+      grass.position.x = carGroup.position.x;
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

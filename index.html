@@ -196,7 +196,7 @@
       scene.add(treeR);
     }
 
-    // --- Helper to Build Vehicle Mesh with Fixed Turn Signals ---
+    // --- Helper to Build Vehicle Mesh ---
     function createCarMesh(colorHex) {
       const carGroup = new THREE.Group();
       const visualBody = new THREE.Group();
@@ -211,7 +211,6 @@
       const taillightIdleMat = new THREE.MeshBasicMaterial({ color: 0x550000 });
       const brakeLightActiveMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
       
-      // Individual materials per side so left and right render independently
       const signalMatLeft = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
       const signalMatRight = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
 
@@ -275,10 +274,9 @@
       centerBrake.position.set(0, 1.42, 0.85);
       visualBody.add(centerBrake);
 
-      // Turn Signals Geometry (-X is LEFT, +X is RIGHT)
+      // Turn Signals Geometry
       const signalGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
 
-      // LEFT SIGNALS (-0.92)
       const signalFL = new THREE.Mesh(signalGeo, signalMatLeft);
       signalFL.position.set(-0.92, 0.65, -2.02);
       visualBody.add(signalFL);
@@ -287,7 +285,6 @@
       signalRL.position.set(-0.92, 0.65, 2.02);
       visualBody.add(signalRL);
 
-      // RIGHT SIGNALS (+0.92)
       const signalFR = new THREE.Mesh(signalGeo, signalMatRight);
       signalFR.position.set(0.92, 0.65, -2.02);
       visualBody.add(signalFR);
@@ -379,18 +376,20 @@
       });
     }
 
-    // --- Gear Index Setup ---
-    const gearList = ['R', 'N', '1', '2', '3', '4', '5'];
+    // --- 7-Speed Transmission Setup ---
+    const gearList = ['R', 'N', '1', '2', '3', '4', '5', '6', '7'];
     let currentGearIndex = 2;
 
     const gearRatios = {
-      'R': { accel: -0.0020, maxSpeed: -0.30, isReverse: true },
+      'R': { accel: -0.0050, maxSpeed: -0.60, isReverse: true },
       'N': { accel: 0, maxSpeed: 0, isNeutral: true },
-      '1': { accel: 0.0045, maxSpeed: 0.35 },
-      '2': { accel: 0.0032, maxSpeed: 0.60 },
-      '3': { accel: 0.0022, maxSpeed: 0.85 },
-      '4': { accel: 0.0015, maxSpeed: 1.10 },
-      '5': { accel: 0.0009, maxSpeed: 1.35 }
+      '1': { accel: 0.0120, maxSpeed: 0.80 },
+      '2': { accel: 0.0090, maxSpeed: 1.40 },
+      '3': { accel: 0.0070, maxSpeed: 2.10 },
+      '4': { accel: 0.0050, maxSpeed: 2.80 },
+      '5': { accel: 0.0038, maxSpeed: 3.50 },
+      '6': { accel: 0.0028, maxSpeed: 4.20 },
+      '7': { accel: 0.0020, maxSpeed: 5.00 } // Top speed translates to ~250+ MPH
     };
 
     // --- Driving Physics Parameters ---
@@ -402,8 +401,8 @@
     let activeSignal = 'OFF';
     let signalTimer = 0;
 
-    const BRAKE_POWER = 0.025;
-    const FRICTION = 0.991;
+    const BRAKE_POWER = 0.06;
+    const FRICTION = 0.994;
 
     const keys = { w: false, s: false, a: false, d: false, shift: false };
 
@@ -426,12 +425,12 @@
         const newGear = gearList[currentGearIndex];
         document.getElementById('gear-display').innerText = `GEAR: ${newGear}`;
 
-        if (oldGear === '5' && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 0.65) {
+        // Money shift check for extreme downshifts at high speed
+        if ((oldGear === '6' || oldGear === '7') && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 2.0) {
           triggerSpinout();
         }
       }
 
-      // Turn signal toggling fix
       if (!keys.shift) {
         if (e.key === 'ArrowLeft') {
           activeSignal = (activeSignal === 'LEFT') ? 'OFF' : 'LEFT';
@@ -504,11 +503,12 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
+        // High-speed tuned steering limits
         const absSpeed = Math.abs(speed);
-        const speedRatio = Math.min(absSpeed / 1.35, 1.0);
+        const speedRatio = Math.min(absSpeed / 5.0, 1.0);
         
-        const maxSteerLimit = 0.065 * (1.0 - speedRatio * 0.82); 
-        const steerBuildRate = 0.0008 + (1.0 - speedRatio) * 0.0006;
+        const maxSteerLimit = 0.065 * (1.0 - speedRatio * 0.88); 
+        const steerBuildRate = 0.0010 + (1.0 - speedRatio) * 0.0008;
 
         if (keys.a) {
           if (currentSteerAngle < maxSteerLimit) {
@@ -523,7 +523,7 @@
             currentSteerAngle += (-maxSteerLimit - currentSteerAngle) * 0.08;
           }
         } else {
-          const returnSpeed = 0.04 + (absSpeed * 0.12);
+          const returnSpeed = 0.04 + (absSpeed * 0.05);
           currentSteerAngle += (0 - currentSteerAngle) * returnSpeed;
         }
 
@@ -539,7 +539,7 @@
         light.material = activeBrakeMaterial;
       });
 
-      // --- Turn Signal Flasher System (Fixed Side Assignment) ---
+      // --- Turn Signal Flasher System ---
       signalTimer += 0.08;
       const isBlinking = Math.sin(signalTimer * 8) > 0;
 
@@ -551,8 +551,8 @@
       playerVehicle.frontPivots[0].rotation.y = frontWheelAngle;
       playerVehicle.frontPivots[1].rotation.y = frontWheelAngle;
 
-      // Body roll logic
-      const targetRoll = -currentSteerAngle * (speed * 2.2);
+      // Body roll logic (scaled for high speed stability)
+      const targetRoll = -currentSteerAngle * Math.min(speed * 0.8, 1.5);
       playerVehicle.body.rotation.z += (targetRoll - playerVehicle.body.rotation.z) * 0.12;
 
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
@@ -592,13 +592,16 @@
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;
 
-      const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+      // Dynamic Chase Camera adjusting distance at higher speeds
+      const speedCamOffset = Math.abs(speed) * 0.8;
+      const cameraOffset = new THREE.Vector3(0, 3.5 + (speedCamOffset * 0.2), 8 + speedCamOffset).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      const mph = Math.round(Math.abs(speed) * 80);
+      // Speedometer scaled to match the increased velocity
+      const mph = Math.round(Math.abs(speed) * 52);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 
       renderer.render(scene, camera);

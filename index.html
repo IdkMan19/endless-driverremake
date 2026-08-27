@@ -196,7 +196,7 @@
       scene.add(treeR);
     }
 
-    // --- Helper to Build Detailed Vehicle Models ---
+    // --- Helper to Build Vehicle Mesh with Active Brake Lights ---
     function createCarMesh(colorHex) {
       const carGroup = new THREE.Group();
       const visualBody = new THREE.Group();
@@ -208,7 +208,8 @@
       const bumperMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
       const glassMat = new THREE.MeshPhongMaterial({ color: 0x223344, shininess: 80, transparent: true, opacity: 0.85 });
       const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
-      const taillightMat = new THREE.MeshBasicMaterial({ color: 0xcc0000 });
+      const taillightIdleMat = new THREE.MeshBasicMaterial({ color: 0x550000 });
+      const brakeLightActiveMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
 
       // Main Chassis Body
       const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.7, 4), carBodyMat);
@@ -225,17 +226,16 @@
       roof.position.set(0, 1.46, -0.1);
       visualBody.add(roof);
 
-      // Front Bumper
+      // Bumpers
       const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat);
       frontBumper.position.set(0, 0.35, -2.05);
       visualBody.add(frontBumper);
 
-      // Rear Bumper
       const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.3, 0.25), bumperMat);
       rearBumper.position.set(0, 0.35, 2.05);
       visualBody.add(rearBumper);
 
-      // Side Mirrors
+      // Mirrors
       const mirrorGeo = new THREE.BoxGeometry(0.2, 0.15, 0.25);
       const mirrorL = new THREE.Mesh(mirrorGeo, bumperMat);
       mirrorL.position.set(-0.95, 1.05, -0.8);
@@ -255,17 +255,23 @@
       headlightR.position.set(0.65, 0.65, -2.02);
       visualBody.add(headlightR);
 
-      // Taillights
+      // Taillights / Brake Lights
       const taillightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
-      const taillightL = new THREE.Mesh(taillightGeo, taillightMat);
+      const taillightL = new THREE.Mesh(taillightGeo, taillightIdleMat);
       taillightL.position.set(-0.65, 0.65, 2.02);
       visualBody.add(taillightL);
 
-      const taillightR = new THREE.Mesh(taillightGeo, taillightMat);
+      const taillightR = new THREE.Mesh(taillightGeo, taillightIdleMat);
       taillightR.position.set(0.65, 0.65, 2.02);
       visualBody.add(taillightR);
 
-      // Turn Signals (Amber Glowing Front & Rear Caps)
+      // High-Mount Central Brake Strip
+      const centerBrakeGeo = new THREE.BoxGeometry(0.6, 0.08, 0.08);
+      const centerBrake = new THREE.Mesh(centerBrakeGeo, taillightIdleMat);
+      centerBrake.position.set(0, 1.42, 0.85);
+      visualBody.add(centerBrake);
+
+      // Turn Signals (Amber Caps)
       const signalMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
       const signalGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
 
@@ -322,6 +328,9 @@
         root: carGroup,
         body: visualBody,
         frontPivots: [frontLeftPivot, frontRightPivot],
+        brakeLights: [taillightL, taillightR, centerBrake],
+        idleMat: taillightIdleMat,
+        activeMat: brakeLightActiveMat,
         signalsLeft: [signalFL, signalRL],
         signalsRight: [signalFR, signalRR]
       };
@@ -354,12 +363,14 @@
       const baseSpeed = (0.0004 + Math.random() * 0.0003) * 0.2;
 
       aiCars.push({
+        vehicle: vehicle,
         mesh: vehicle.root,
         progress: progress,
         targetSpeed: baseSpeed,
         currentSpeed: baseSpeed,
         laneOffset: laneOffset,
-        direction: laneSide
+        direction: laneSide,
+        isBraking: false
       });
     }
 
@@ -451,6 +462,7 @@
 
       const currentGearKey = gearList[currentGearIndex];
       const activeGear = gearRatios[currentGearKey];
+      let playerIsBraking = false;
 
       if (isSpinningOut) {
         carGroup.rotation.y += 0.25;
@@ -475,7 +487,9 @@
           speed *= FRICTION;
         }
 
+        // Brake key mechanics
         if (keys.s) {
+          playerIsBraking = true;
           if (speed > 0) {
             speed = Math.max(0, speed - BRAKE_POWER);
           } else if (speed < 0) {
@@ -485,7 +499,7 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // --- Speed-Sensitive Steering Inertia ---
+        // Steering dynamics
         const absSpeed = Math.abs(speed);
         const speedRatio = Math.min(absSpeed / 1.35, 1.0);
         
@@ -515,6 +529,12 @@
         }
       }
 
+      // --- Update Player Brake Lights ---
+      const activeBrakeMaterial = playerIsBraking ? playerVehicle.activeMat : playerVehicle.idleMat;
+      playerVehicle.brakeLights.forEach(light => {
+        light.material = activeBrakeMaterial;
+      });
+
       // --- Turn Signal Flasher System ---
       signalTimer += 0.08;
       const isBlinking = Math.sin(signalTimer * 5) > 0;
@@ -538,7 +558,7 @@
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
-      // --- Update AI Traffic ---
+      // --- Update AI Traffic & Brake Lights ---
       aiCars.forEach(ai => {
         ai.progress += ai.currentSpeed * ai.direction;
         if (ai.progress > 1) ai.progress -= 1;
@@ -554,11 +574,20 @@
         ai.mesh.lookAt(lookTarget);
 
         const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
+        
+        // AI Braking logic when near player
         if (distToPlayer < 18) {
           ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.000002);
+          ai.isBraking = true;
         } else {
           ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.000001);
+          ai.isBraking = false;
         }
+
+        const aiBrakeMat = ai.isBraking ? ai.vehicle.activeMat : ai.vehicle.idleMat;
+        ai.vehicle.brakeLights.forEach(light => {
+          light.material = aiBrakeMat;
+        });
       });
 
       grass.position.x = carGroup.position.x;

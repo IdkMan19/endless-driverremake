@@ -196,13 +196,13 @@
       scene.add(treeR);
     }
 
-    // --- Helper to Build Vehicle Mesh with Active Brake Lights ---
+    // --- Helper to Build Vehicle Mesh with Fixed Turn Signals ---
     function createCarMesh(colorHex) {
       const carGroup = new THREE.Group();
       const visualBody = new THREE.Group();
       carGroup.add(visualBody);
 
-      // Shared materials
+      // Materials
       const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
       const darkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
       const bumperMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
@@ -210,6 +210,10 @@
       const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
       const taillightIdleMat = new THREE.MeshBasicMaterial({ color: 0x550000 });
       const brakeLightActiveMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+      
+      // Individual materials per side so left and right render independently
+      const signalMatLeft = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
+      const signalMatRight = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
 
       // Main Chassis Body
       const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.7, 4), carBodyMat);
@@ -255,7 +259,7 @@
       headlightR.position.set(0.65, 0.65, -2.02);
       visualBody.add(headlightR);
 
-      // Taillights / Brake Lights
+      // Taillights
       const taillightGeo = new THREE.BoxGeometry(0.4, 0.18, 0.08);
       const taillightL = new THREE.Mesh(taillightGeo, taillightIdleMat);
       taillightL.position.set(-0.65, 0.65, 2.02);
@@ -271,27 +275,28 @@
       centerBrake.position.set(0, 1.42, 0.85);
       visualBody.add(centerBrake);
 
-      // Turn Signals (Amber Caps)
-      const signalMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
+      // Turn Signals Geometry (-X is LEFT, +X is RIGHT)
       const signalGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
 
-      const signalFL = new THREE.Mesh(signalGeo, signalMat);
+      // LEFT SIGNALS (-0.92)
+      const signalFL = new THREE.Mesh(signalGeo, signalMatLeft);
       signalFL.position.set(-0.92, 0.65, -2.02);
       visualBody.add(signalFL);
 
-      const signalFR = new THREE.Mesh(signalGeo, signalMat);
-      signalFR.position.set(0.92, 0.65, -2.02);
-      visualBody.add(signalFR);
-
-      const signalRL = new THREE.Mesh(signalGeo, signalMat);
+      const signalRL = new THREE.Mesh(signalGeo, signalMatLeft);
       signalRL.position.set(-0.92, 0.65, 2.02);
       visualBody.add(signalRL);
 
-      const signalRR = new THREE.Mesh(signalGeo, signalMat);
+      // RIGHT SIGNALS (+0.92)
+      const signalFR = new THREE.Mesh(signalGeo, signalMatRight);
+      signalFR.position.set(0.92, 0.65, -2.02);
+      visualBody.add(signalFR);
+
+      const signalRR = new THREE.Mesh(signalGeo, signalMatRight);
       signalRR.position.set(0.92, 0.65, 2.02);
       visualBody.add(signalRR);
 
-      // Detailed Wheels with Rim Caps
+      // Detailed Wheels
       const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
       wheelGeo.rotateZ(Math.PI / 2);
       
@@ -331,8 +336,8 @@
         brakeLights: [taillightL, taillightR, centerBrake],
         idleMat: taillightIdleMat,
         activeMat: brakeLightActiveMat,
-        signalsLeft: [signalFL, signalRL],
-        signalsRight: [signalFR, signalRR]
+        signalMatLeft: signalMatLeft,
+        signalMatRight: signalMatRight
       };
     }
 
@@ -426,6 +431,7 @@
         }
       }
 
+      // Turn signal toggling fix
       if (!keys.shift) {
         if (e.key === 'ArrowLeft') {
           activeSignal = (activeSignal === 'LEFT') ? 'OFF' : 'LEFT';
@@ -487,7 +493,6 @@
           speed *= FRICTION;
         }
 
-        // Brake key mechanics
         if (keys.s) {
           playerIsBraking = true;
           if (speed > 0) {
@@ -499,7 +504,6 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // Steering dynamics
         const absSpeed = Math.abs(speed);
         const speedRatio = Math.min(absSpeed / 1.35, 1.0);
         
@@ -535,16 +539,12 @@
         light.material = activeBrakeMaterial;
       });
 
-      // --- Turn Signal Flasher System ---
+      // --- Turn Signal Flasher System (Fixed Side Assignment) ---
       signalTimer += 0.08;
-      const isBlinking = Math.sin(signalTimer * 5) > 0;
+      const isBlinking = Math.sin(signalTimer * 8) > 0;
 
-      playerVehicle.signalsLeft.forEach(mesh => {
-        mesh.material.visible = (activeSignal === 'LEFT') && isBlinking;
-      });
-      playerVehicle.signalsRight.forEach(mesh => {
-        mesh.material.visible = (activeSignal === 'RIGHT') && isBlinking;
-      });
+      playerVehicle.signalMatLeft.visible = (activeSignal === 'LEFT') && isBlinking;
+      playerVehicle.signalMatRight.visible = (activeSignal === 'RIGHT') && isBlinking;
 
       // Front wheel steering visual angle
       const frontWheelAngle = currentSteerAngle * 9;
@@ -575,7 +575,6 @@
 
         const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
         
-        // AI Braking logic when near player
         if (distToPlayer < 18) {
           ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.000002);
           ai.isBraking = true;

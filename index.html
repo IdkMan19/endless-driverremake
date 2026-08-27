@@ -44,6 +44,18 @@
       margin-top: 5px;
       display: none;
     }
+    #crash-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 36px;
+      font-weight: bold;
+      color: #ff1111;
+      text-shadow: 2px 2px 8px #000;
+      display: none;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -56,6 +68,7 @@
     <div id="signals-display">SIGNAL: OFF</div>
     <div id="warning">MONEY SHIFT! SPINOUT!</div>
   </div>
+  <div id="crash-overlay">CRASH!</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
@@ -196,6 +209,64 @@
       scene.add(treeR);
     }
 
+    // --- Particle System for Crash Sparks ---
+    const MAX_PARTICLES = 150;
+    const particleGeo = new THREE.BufferGeometry();
+    const particlePositions = new Float32Array(MAX_PARTICLES * 3);
+    const particleVelocities = [];
+
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      particlePositions[i * 3] = 0;
+      particlePositions[i * 3 + 1] = -100;
+      particlePositions[i * 3 + 2] = 0;
+      particleVelocities.push(new THREE.Vector3());
+    }
+
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+    const particleMat = new THREE.PointsMaterial({
+      color: 0xffaa00,
+      size: 0.35,
+      transparent: true,
+      opacity: 1
+    });
+    const particleSystem = new THREE.Points(particleGeo, particleMat);
+    scene.add(particleSystem);
+
+    function spawnSparks(originPoint, count) {
+      const positions = particleGeo.attributes.position.array;
+      for (let i = 0; i < count; i++) {
+        const index = Math.floor(Math.random() * MAX_PARTICLES);
+        positions[index * 3] = originPoint.x + (Math.random() - 0.5);
+        positions[index * 3 + 1] = originPoint.y + 0.5;
+        positions[index * 3 + 2] = originPoint.z + (Math.random() - 0.5);
+
+        particleVelocities[index].set(
+          (Math.random() - 0.5) * 0.8,
+          Math.random() * 0.6 + 0.2,
+          (Math.random() - 0.5) * 0.8
+        );
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+    }
+
+    function updateSparks() {
+      const positions = particleGeo.attributes.position.array;
+      for (let i = 0; i < MAX_PARTICLES; i++) {
+        if (positions[i * 3 + 1] > -50) {
+          positions[i * 3] += particleVelocities[i].x;
+          positions[i * 3 + 1] += particleVelocities[i].y;
+          positions[i * 3 + 2] += particleVelocities[i].z;
+
+          particleVelocities[i].y -= 0.03; // Gravity effect
+
+          if (positions[i * 3 + 1] <= 0.01) {
+            positions[i * 3 + 1] = -100; // Reset under ground
+          }
+        }
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+    }
+
     // --- Helper to Build Vehicle Mesh ---
     function createCarMesh(colorHex) {
       const carGroup = new THREE.Group();
@@ -326,6 +397,9 @@
       frontRightPivot.position.set(1.05, 0.4, -1.2);
       visualBody.add(frontRightPivot);
 
+      // Bounding Box for Physics Collision
+      const bbox = new THREE.Box3();
+
       return {
         root: carGroup,
         body: visualBody,
@@ -334,7 +408,8 @@
         idleMat: taillightIdleMat,
         activeMat: brakeLightActiveMat,
         signalMatLeft: signalMatLeft,
-        signalMatRight: signalMatRight
+        signalMatRight: signalMatRight,
+        bbox: bbox
       };
     }
 
@@ -376,7 +451,7 @@
       });
     }
 
-    // --- 7-Speed Transmission Setup ---
+    // --- Transmission & Physics Setup ---
     const gearList = ['R', 'N', '1', '2', '3', '4', '5', '6', '7'];
     let currentGearIndex = 2;
 
@@ -389,15 +464,15 @@
       '4': { accel: 0.0028, maxSpeed: 1.20 },
       '5': { accel: 0.0020, maxSpeed: 1.50 },
       '6': { accel: 0.0014, maxSpeed: 1.75 },
-      '7': { accel: 0.0009, maxSpeed: 2.00 } // Max speed scaling yields ~160 MPH
+      '7': { accel: 0.0009, maxSpeed: 2.00 }
     };
 
-    // --- Driving Physics Parameters ---
     let speed = 0;
     let currentSteerAngle = 0;
     let isSpinningOut = false;
     let spinoutTimer = 0;
 
+    let crashCooldown = 0;
     let activeSignal = 'OFF';
     let signalTimer = 0;
 
@@ -531,6 +606,72 @@
         }
       }
 
+      // --- Movement Vectors & Bounding Box Updates ---
+      const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+      carGroup.position.addScaledVector(forwardVector, speed);
+
+      playerVehicle.bbox.setFromObject(playerVehicle.body);
+
+      // --- Collision Detection with AI Cars ---
+      if (crashCooldown > 0) {
+        crashCooldown--;
+        if (crashCooldown === 0) {
+          document.getElementById('crash-overlay').style.display = 'none';
+        }
+      }
+
+      aiCars.forEach(ai => {
+        ai.progress += ai.currentSpeed * ai.direction;
+        if (ai.progress > 1) ai.progress -= 1;
+        if (ai.progress < 0) ai.progress += 1;
+
+        const pos = roadCurve.getPointAt(ai.progress);
+        const tangent = roadCurve.getTangentAt(ai.progress);
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+        ai.mesh.position.copy(pos).addScaledVector(normal, ai.laneOffset);
+        
+        const lookTarget = pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, ai.laneOffset);
+        ai.mesh.lookAt(lookTarget);
+
+        ai.vehicle.bbox.setFromObject(ai.vehicle.body);
+
+        // Check Bounding Box Intersection
+        if (playerVehicle.bbox.intersectsBox(ai.vehicle.bbox) && crashCooldown === 0) {
+          crashCooldown = 45; // Cooldown frame counter
+
+          // Collision physics resolution
+          const impactPoint = carGroup.position.clone().add(ai.mesh.position).multiplyScalar(0.5);
+          spawnSparks(impactPoint, 30);
+
+          // Push back and rebound speed
+          speed = -speed * 0.45;
+          carGroup.position.addScaledVector(forwardVector, -1.2);
+
+          // Visual Body Shake Deformation
+          playerVehicle.body.rotation.z += (Math.random() - 0.5) * 0.4;
+          playerVehicle.body.rotation.x += (Math.random() - 0.5) * 0.3;
+
+          // UI Alert
+          document.getElementById('crash-overlay').style.display = 'block';
+        }
+
+        const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
+        
+        if (distToPlayer < 18) {
+          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.000002);
+          ai.isBraking = true;
+        } else {
+          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.000001);
+          ai.isBraking = false;
+        }
+
+        const aiBrakeMat = ai.isBraking ? ai.vehicle.activeMat : ai.vehicle.idleMat;
+        ai.vehicle.brakeLights.forEach(light => {
+          light.material = aiBrakeMat;
+        });
+      });
+
       // --- Update Player Brake Lights ---
       const activeBrakeMaterial = playerIsBraking ? playerVehicle.activeMat : playerVehicle.idleMat;
       playerVehicle.brakeLights.forEach(light => {
@@ -549,43 +690,13 @@
       playerVehicle.frontPivots[0].rotation.y = frontWheelAngle;
       playerVehicle.frontPivots[1].rotation.y = frontWheelAngle;
 
-      // Body roll logic
+      // Body roll logic & deformation dampening
       const targetRoll = -currentSteerAngle * (speed * 2.2);
       playerVehicle.body.rotation.z += (targetRoll - playerVehicle.body.rotation.z) * 0.12;
+      playerVehicle.body.rotation.x += (0 - playerVehicle.body.rotation.x) * 0.1;
 
-      const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
-      carGroup.position.addScaledVector(forwardVector, speed);
-
-      // --- Update AI Traffic & Brake Lights ---
-      aiCars.forEach(ai => {
-        ai.progress += ai.currentSpeed * ai.direction;
-        if (ai.progress > 1) ai.progress -= 1;
-        if (ai.progress < 0) ai.progress += 1;
-
-        const pos = roadCurve.getPointAt(ai.progress);
-        const tangent = roadCurve.getTangentAt(ai.progress);
-        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-
-        ai.mesh.position.copy(pos).addScaledVector(normal, ai.laneOffset);
-        
-        const lookTarget = pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, ai.laneOffset);
-        ai.mesh.lookAt(lookTarget);
-
-        const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
-        
-        if (distToPlayer < 18) {
-          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.000002);
-          ai.isBraking = true;
-        } else {
-          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.000001);
-          ai.isBraking = false;
-        }
-
-        const aiBrakeMat = ai.isBraking ? ai.vehicle.activeMat : ai.vehicle.idleMat;
-        ai.vehicle.brakeLights.forEach(light => {
-          light.material = aiBrakeMat;
-        });
-      });
+      // Update Spark Particles
+      updateSparks();
 
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;

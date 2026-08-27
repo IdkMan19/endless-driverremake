@@ -196,7 +196,7 @@
       scene.add(treeR);
     }
 
-    // --- Helper to Build Dynamic Car Models with Signals & Pivoting Front Wheels ---
+    // --- Helper to Build Dynamic Car Models ---
     function createCarMesh(colorHex) {
       const carGroup = new THREE.Group();
       const visualBody = new THREE.Group();
@@ -212,7 +212,6 @@
       cabin.position.set(0, 1.2, -0.2);
       visualBody.add(cabin);
 
-      // Turn Signals (Front & Rear)
       const signalMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, visible: false });
       const signalGeo = new THREE.BoxGeometry(0.3, 0.2, 0.1);
 
@@ -317,20 +316,15 @@
 
     // --- Driving Physics Parameters ---
     let speed = 0;
-    let currentSteerAngle = 0;
+    let currentSteerAngle = 0; // Active steering wheel position
     let isSpinningOut = false;
     let spinoutTimer = 0;
 
-    // Turn Signals State: 'OFF', 'LEFT', 'RIGHT'
     let activeSignal = 'OFF';
     let signalTimer = 0;
 
     const BRAKE_POWER = 0.025;
     const FRICTION = 0.991;
-    
-    // Steering Tuning with Steering Inertia / Centering Decay
-    const BASE_STEER_ACCEL = 0.0018; 
-    const STEER_RETURN_RATE = 0.96; // Gradual return to straight (lower decay = smoother return)
 
     const keys = { w: false, s: false, a: false, d: false, shift: false };
 
@@ -341,7 +335,6 @@
       if (e.key === 'd' || e.key === 'D') keys.d = true;
       if (e.key === 'Shift') keys.shift = true;
 
-      // Gear Shifting: Shift + Up/Down Arrows
       if (keys.shift && !isSpinningOut) {
         const oldGear = gearList[currentGearIndex];
 
@@ -359,7 +352,6 @@
         }
       }
 
-      // Turn Signal Controls: Left / Right Arrows (without Shift)
       if (!keys.shift) {
         if (e.key === 'ArrowLeft') {
           activeSignal = (activeSignal === 'LEFT') ? 'OFF' : 'LEFT';
@@ -430,18 +422,32 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // Speed-dependent steering sensitivity (more sensitive low speed, less sensitive high speed)
-        const speedRatio = Math.min(Math.abs(speed) / 1.35, 1.0);
-        const maxSteerLimit = 0.055 - (speedRatio * 0.035); // Sensitivity drops as speed grows
+        // --- Progressive Speed-Sensitive Steering Dynamics ---
+        const absSpeed = Math.abs(speed);
+        const speedRatio = Math.min(absSpeed / 1.35, 1.0);
         
+        // Maximum steering lock drops drastically at higher speeds
+        const maxSteerLimit = 0.065 * (1.0 - speedRatio * 0.82); 
+        
+        // Steering acceleration rate (slowly builds angle)
+        const steerBuildRate = 0.0008 + (1.0 - speedRatio) * 0.0006;
+
         if (keys.a) {
-          currentSteerAngle = Math.min(currentSteerAngle + BASE_STEER_ACCEL, maxSteerLimit);
+          if (currentSteerAngle < maxSteerLimit) {
+            currentSteerAngle += steerBuildRate;
+          } else {
+            currentSteerAngle += (maxSteerLimit - currentSteerAngle) * 0.08;
+          }
         } else if (keys.d) {
-          currentSteerAngle = Math.max(currentSteerAngle - BASE_STEER_ACCEL, -maxSteerLimit);
+          if (currentSteerAngle > -maxSteerLimit) {
+            currentSteerAngle -= steerBuildRate;
+          } else {
+            currentSteerAngle += (-maxSteerLimit - currentSteerAngle) * 0.08;
+          }
         } else {
-          // Gradual caster-effect centering, dependent on car speed
-          const returnFactor = STEER_RETURN_RATE - (speedRatio * 0.03);
-          currentSteerAngle *= returnFactor;
+          // Smooth return to center when released
+          const returnSpeed = 0.04 + (absSpeed * 0.12);
+          currentSteerAngle += (0 - currentSteerAngle) * returnSpeed;
         }
 
         if (Math.abs(speed) > 0.002) {
@@ -461,8 +467,8 @@
         mesh.material.visible = (activeSignal === 'RIGHT') && isBlinking;
       });
 
-      // Front wheel steering angle
-      const frontWheelAngle = currentSteerAngle * 10;
+      // Front wheel steering visual angle
+      const frontWheelAngle = currentSteerAngle * 9;
       playerVehicle.frontPivots[0].rotation.y = frontWheelAngle;
       playerVehicle.frontPivots[1].rotation.y = frontWheelAngle;
 

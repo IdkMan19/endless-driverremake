@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Physics Driving Simulator with Infinite Random Road</title>
+  <title>Physics Driving Simulator with Dynamic Steering</title>
   <style>
     body {
       margin: 0;
@@ -189,41 +189,58 @@
       scene.add(treeR);
     }
 
-    // --- Helper to Build Car Models ---
+    // --- Helper to Build Dynamic Car Models with Independent Front Wheels ---
     function createCarMesh(colorHex) {
-      const carGroup = new THREE.Group();
+      const carGroup = new THREE.Group(); // Master physics root
+      const visualBody = new THREE.Group(); // Visual mesh that rolls/pitches during turns
+      carGroup.add(visualBody);
+
       const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
       const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), carBodyMat);
       carBody.position.y = 0.5;
-      carGroup.add(carBody);
+      visualBody.add(carBody);
 
       const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
       const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2), cabinMat);
       cabin.position.set(0, 1.2, -0.2);
-      carGroup.add(cabin);
+      visualBody.add(cabin);
 
       const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
       const wheelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
       wheelGeo.rotateZ(Math.PI / 2);
 
-      const wheelPositions = [
-        [-1.1, 0.4, 1.2],
-        [1.1, 0.4, 1.2],
-        [-1.1, 0.4, -1.2],
-        [1.1, 0.4, -1.2]
-      ];
+      // Rear wheels (fixed to body)
+      const rearLeft = new THREE.Mesh(wheelGeo, wheelMat);
+      rearLeft.position.set(-1.1, 0.4, 1.2);
+      visualBody.add(rearLeft);
 
-      wheelPositions.forEach((pos) => {
-        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-        wheel.position.set(...pos);
-        carGroup.add(wheel);
-      });
+      const rearRight = new THREE.Mesh(wheelGeo, wheelMat);
+      rearRight.position.set(1.1, 0.4, 1.2);
+      visualBody.add(rearRight);
 
-      return carGroup;
+      // Front steering wheels (can rotate independently)
+      const frontLeftPivot = new THREE.Group();
+      frontLeftPivot.position.set(-1.1, 0.4, -1.2);
+      const frontLeft = new THREE.Mesh(wheelGeo, wheelMat);
+      frontLeftPivot.add(frontLeft);
+      visualBody.add(frontLeftPivot);
+
+      const frontRightPivot = new THREE.Group();
+      frontRightPivot.position.set(1.1, 0.4, -1.2);
+      const frontRight = new THREE.Mesh(wheelGeo, wheelMat);
+      frontRightPivot.add(frontRight);
+      visualBody.add(frontRightPivot);
+
+      return {
+        root: carGroup,
+        body: visualBody,
+        frontPivots: [frontLeftPivot, frontRightPivot]
+      };
     }
 
     // --- Player Car Setup ---
-    const carGroup = createCarMesh(0xcc0000);
+    const playerVehicle = createCarMesh(0xcc0000);
+    const carGroup = playerVehicle.root;
     scene.add(carGroup);
     
     const startPos = roadCurve.getPointAt(0);
@@ -238,8 +255,8 @@
 
     for (let i = 0; i < NUM_AI_CARS; i++) {
       const color = trafficColors[i % trafficColors.length];
-      const mesh = createCarMesh(color);
-      scene.add(mesh);
+      const vehicle = createCarMesh(color);
+      scene.add(vehicle.root);
 
       const progress = (i / NUM_AI_CARS);
       const laneSide = i % 2 === 0 ? 1 : -1;
@@ -248,7 +265,7 @@
       const baseSpeed = (0.0004 + Math.random() * 0.0003) * 0.2;
 
       aiCars.push({
-        mesh: mesh,
+        mesh: vehicle.root,
         progress: progress,
         targetSpeed: baseSpeed,
         currentSpeed: baseSpeed,
@@ -273,17 +290,17 @@
 
     // --- Driving Physics Parameters ---
     let speed = 0;
-    let steeringAngle = 0; // Current actual steering position
+    let currentSteerAngle = 0; // Dynamic steering wheel rotation
     let isSpinningOut = false;
     let spinoutTimer = 0;
 
     const BRAKE_POWER = 0.025;
     const FRICTION = 0.991;
     
-    // Smooth Steering Dynamic Parameters
-    const STEER_SPEED = 0.04;        // Speed at which steering turns into the corner
-    const STEER_RETURN = 0.08;       // Speed at which wheel centers itself when key released
-    const MAX_STEER_ANGLE = 0.032;   // Maximum turn angle lock
+    // Smooth Progressive Steering Tuning
+    const MAX_STEER_ANGLE = 0.038;
+    const STEER_ACCEL = 0.0022; // Speed up turn as key is held
+    const STEER_DECAY = 0.82;   // Smoothly recenter steering when released
 
     const keys = { forward: false, backward: false, left: false, right: false, clutch: false };
 
@@ -376,25 +393,32 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // --- Smooth Dynamic Steering Ramp ---
-        let targetSteer = 0;
-        if (keys.left) targetSteer = 1;
-        if (keys.right) targetSteer = -1;
-
-        if (targetSteer !== 0) {
-          // Gradually ramp up turning speed into the turn
-          steeringAngle = THREE.MathUtils.lerp(steeringAngle, targetSteer, STEER_SPEED);
+        // --- Progressive Smooth Steering Logic ---
+        if (keys.left) {
+          currentSteerAngle = Math.min(currentSteerAngle + STEER_ACCEL, MAX_STEER_ANGLE);
+        } else if (keys.right) {
+          currentSteerAngle = Math.max(currentSteerAngle - STEER_ACCEL, -MAX_STEER_ANGLE);
         } else {
-          // Smoothly ramp down turning speed back to center on release
-          steeringAngle = THREE.MathUtils.lerp(steeringAngle, 0, STEER_RETURN);
+          // Smoothly decay/recenter steering when player releases keys
+          currentSteerAngle *= STEER_DECAY;
         }
 
+        // Apply turning scaled with car velocity
         if (Math.abs(speed) > 0.003) {
           const turnDirection = speed >= 0 ? 1 : -1;
-          const currentTurnRate = steeringAngle * MAX_STEER_ANGLE;
-          carGroup.rotation.y += currentTurnRate * turnDirection * (Math.abs(speed) / 1.35);
+          carGroup.rotation.y += currentSteerAngle * turnDirection * (Math.abs(speed) / 1.1);
         }
       }
+
+      // --- Realistic Visual Body Roll & Front Wheels Angle ---
+      // Rotate front wheel pivots visually
+      const frontWheelAngle = currentSteerAngle * 12;
+      playerVehicle.frontPivots[0].rotation.y = frontWheelAngle;
+      playerVehicle.frontPivots[1].rotation.y = frontWheelAngle;
+
+      // Body lean (Roll Z-axis into turn, Pitch X-axis under acceleration/brake)
+      const targetRoll = -currentSteerAngle * (speed * 1.8);
+      playerVehicle.body.rotation.z += (targetRoll - playerVehicle.body.rotation.z) * 0.15;
 
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);

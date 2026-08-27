@@ -202,19 +202,20 @@
     // --- AI Traffic System ---
     const aiCars = [];
     const trafficColors = [0x0055ff, 0xffaa00, 0x888888, 0x00aa44, 0x9900cc];
-    const NUM_AI_CARS = 10;
+    const NUM_AI_CARS = 12;
 
     for (let i = 0; i < NUM_AI_CARS; i++) {
       const color = trafficColors[i % trafficColors.length];
       const mesh = createCarMesh(color);
       scene.add(mesh);
 
+      // Distribute cars along curve path
       const progress = (i / NUM_AI_CARS) + 0.05;
-      const laneSide = i % 2 === 0 ? 1 : -1;
+      const laneSide = i % 2 === 0 ? 1 : -1; // 1 = Right Lane, -1 = Left Lane
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
 
-      // Significantly reduced target speed for slower cruising
-      const baseSpeed = 0.00025 + Math.random() * 0.00015;
+      // Speed reduced to 20% of original value (0.0008 * 0.2 = 0.00016)
+      const baseSpeed = (0.0008 + Math.random() * 0.0004) * 0.2;
 
       aiCars.push({
         mesh: mesh,
@@ -306,18 +307,6 @@
 
       // --- Update AI Traffic ---
       aiCars.forEach(ai => {
-        // Distance check to react to Player's Car
-        const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
-        
-        if (distToPlayer < 25) {
-          // Brake earlier and slow down smoothly when near player
-          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.00003);
-        } else {
-          // Smoothly accelerate back up to slow cruising speed
-          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.00001);
-        }
-
-        // Advance progress along curve at current speed
         ai.progress += ai.currentSpeed * ai.direction;
         if (ai.progress > 0.98) ai.progress = 0.02;
         if (ai.progress < 0.02) ai.progress = 0.98;
@@ -330,6 +319,14 @@
         
         const lookTarget = pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, ai.laneOffset);
         ai.mesh.lookAt(lookTarget);
+
+        // Distance check to react to Player's Car
+        const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
+        if (distToPlayer < 18) {
+          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.00002);
+        } else {
+          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.00001);
+        }
       });
 
       // Infinite Grass Follow

@@ -189,15 +189,15 @@
       scene.add(centerDash2);
 
       // Outer Edges
-      const leftPos = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
-      const leftNext = nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
+      const leftPos = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.5);
+      const leftNext = nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.5);
       const leftEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
       leftEdge.position.set(leftPos.x, GROUND_Y + 0.02, leftPos.z);
       leftEdge.lookAt(leftNext.x, GROUND_Y + 0.02, leftNext.z);
       scene.add(leftEdge);
 
-      const rightPos = pt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
-      const rightNext = nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
+      const rightPos = pt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.5));
+      const rightNext = nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.5));
       const rightEdge = new THREE.Mesh(edgeGeo, lineMatWhite);
       rightEdge.position.set(rightPos.x, GROUND_Y + 0.02, rightPos.z);
       rightEdge.lookAt(rightNext.x, GROUND_Y + 0.02, rightNext.z);
@@ -236,7 +236,7 @@
 
     // Procedural Generation - Strictly outside road boundaries
     function generateForestData() {
-      const numTrees = 1800;
+      const numTrees = 1000;
       const minDistanceOffRoad = ROAD_WIDTH / 2 + SAFETY_BUFFER;
 
       for (let i = 0; i < numTrees; i++) {
@@ -263,7 +263,7 @@
         }
 
         if (!tooClose) {
-          const scale = 0.8 + Math.random() * 0.6;
+          const scale = 0.8 + Math.random() * 0.5;
           const treeGroup = treeMasterTemplate.clone();
           treeGroup.position.set(treeX, GROUND_Y, treeZ);
           treeGroup.scale.set(scale, scale, scale);
@@ -367,6 +367,7 @@
       const debrisGeo = new THREE.BoxGeometry(
         (0.3 + Math.random() * 0.4) * partScale,
         (0.2 + Math.random() * 0.3) * partScale,
+        (0.2 + Math.random() * 0.6) * partScale,
         (0.3 + Math.random() * 0.5) * partScale
       );
       const debrisMat = new THREE.MeshLambertMaterial({ color: colorHex });
@@ -651,7 +652,7 @@
       const isOncoming = (i % 2 === 1);
       const direction = isOncoming ? -1 : 1;
       const laneOffset = isOncoming ? (ROAD_WIDTH / 4) : (-ROAD_WIDTH / 4);
-      const baseSpeed = 0.00025 + Math.random() * 0.00015;
+      const baseSpeed = 0.00005 + Math.random() * 0.00015;
 
       aiCars.push({
         ...aiObj,

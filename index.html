@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Physics Driving Simulator</title>
+  <title>Physics Driving Simulator with AI Traffic</title>
   <style>
     body {
       margin: 0;
@@ -65,16 +65,15 @@
     scene.add(grass);
 
     // --- Curved 2-Lane Road Mesh Generator ---
-    const ROAD_WIDTH = 18; // Full width of the 2-lane asphalt
+    const ROAD_WIDTH = 18;
     const NUM_POINTS = 400;
     const pathPoints = [];
 
-    // Generate road curve points
     let rX = 0, rZ = 0;
     for (let i = 0; i < NUM_POINTS; i++) {
       pathPoints.push(new THREE.Vector3(rX, 0, rZ));
       rZ -= 25;
-      rX += Math.sin(i * 0.12) * 22; // Smooth turns
+      rX += Math.sin(i * 0.12) * 22;
     }
 
     const roadCurve = new THREE.CatmullRomCurve3(pathPoints);
@@ -87,12 +86,9 @@
     for (let i = 0; i < curvePoints.length; i++) {
       const pt = curvePoints[i];
       const tangent = roadCurve.getTangentAt(i / curvePoints.length);
-      // Perpendicular vector along the horizontal plane (X/Z)
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-      // Left vertex of asphalt
       const leftPt = pt.clone().addScaledVector(normal, ROAD_WIDTH / 2);
-      // Right vertex of asphalt
       const rightPt = pt.clone().addScaledVector(normal, -ROAD_WIDTH / 2);
 
       roadVertices.push(leftPt.x, 0.01, leftPt.z);
@@ -114,7 +110,7 @@
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
     scene.add(roadMesh);
 
-    // --- Road Markings (Yellow Dashed Center + White Solid Edge Shoulders) ---
+    // --- Road Markings ---
     const lineMatYellow = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
     const lineMatWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -124,7 +120,6 @@
       const tangent = roadCurve.getTangentAt(i / curvePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-      // Yellow Center Dash
       if (i % 3 === 0) {
         const centerDash = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3), lineMatYellow);
         centerDash.position.copy(pt);
@@ -133,14 +128,12 @@
         scene.add(centerDash);
       }
 
-      // White Left Shoulder Line
       const leftEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3.5), lineMatWhite);
       leftEdge.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
       leftEdge.position.y = 0.03;
       leftEdge.lookAt(nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6));
       scene.add(leftEdge);
 
-      // White Right Shoulder Line
       const rightEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.02, 3.5), lineMatWhite);
       rightEdge.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
       rightEdge.position.y = 0.03;
@@ -168,38 +161,68 @@
       scene.add(treeR);
     }
 
+    // --- Helper to Build Car Models ---
+    function createCarMesh(colorHex) {
+      const carGroup = new THREE.Group();
+      const carBodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
+      const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), carBodyMat);
+      carBody.position.y = 0.5;
+      carGroup.add(carBody);
+
+      const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2), cabinMat);
+      cabin.position.set(0, 1.2, -0.2);
+      carGroup.add(cabin);
+
+      const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
+      const wheelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+      wheelGeo.rotateZ(Math.PI / 2);
+
+      const wheelPositions = [
+        [-1.1, 0.4, 1.2],
+        [1.1, 0.4, 1.2],
+        [-1.1, 0.4, -1.2],
+        [1.1, 0.4, -1.2]
+      ];
+
+      wheelPositions.forEach((pos) => {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.position.set(...pos);
+        carGroup.add(wheel);
+      });
+
+      return carGroup;
+    }
+
     // --- Player Car ---
-    const carGroup = new THREE.Group();
-
-    const carBodyMat = new THREE.MeshLambertMaterial({ color: 0xcc0000 });
-    const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4), carBodyMat);
-    carBody.position.y = 0.5;
-    carGroup.add(carBody);
-
-    const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2), cabinMat);
-    cabin.position.set(0, 1.2, -0.2);
-    carGroup.add(cabin);
-
-    const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
-    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-    wheelGeo.rotateZ(Math.PI / 2);
-
-    const wheelPositions = [
-      [-1.1, 0.4, 1.2],
-      [1.1, 0.4, 1.2],
-      [-1.1, 0.4, -1.2],
-      [1.1, 0.4, -1.2]
-    ];
-
-    wheelPositions.forEach((pos) => {
-      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-      wheel.position.set(...pos);
-      carGroup.add(wheel);
-    });
-
+    const carGroup = createCarMesh(0xcc0000);
     scene.add(carGroup);
     carGroup.position.set(0, 0, 0);
+
+    // --- AI Traffic System ---
+    const aiCars = [];
+    const trafficColors = [0x0055ff, 0xffaa00, 0x888888, 0x00aa44, 0x9900cc];
+    const NUM_AI_CARS = 12;
+
+    for (let i = 0; i < NUM_AI_CARS; i++) {
+      const color = trafficColors[i % trafficColors.length];
+      const mesh = createCarMesh(color);
+      scene.add(mesh);
+
+      // Distribute cars along curve path
+      const progress = (i / NUM_AI_CARS) + 0.05;
+      const laneSide = i % 2 === 0 ? 1 : -1; // 1 = Right Lane, -1 = Left Lane
+      const laneOffset = (ROAD_WIDTH / 4) * laneSide;
+
+      aiCars.push({
+        mesh: mesh,
+        progress: progress,
+        targetSpeed: 0.0008 + Math.random() * 0.0004,
+        currentSpeed: 0.0008,
+        laneOffset: laneOffset,
+        direction: laneSide // Right lane moves forward, left lane moves reverse
+      });
+    }
 
     // --- Driving Physics Parameters ---
     let speed = 0;
@@ -278,6 +301,35 @@
       // Movement
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
+
+      // --- Update AI Traffic ---
+      aiCars.forEach(ai => {
+        // Advance progress along curve
+        ai.progress += ai.targetSpeed * ai.direction;
+        if (ai.progress > 0.98) ai.progress = 0.02;
+        if (ai.progress < 0.02) ai.progress = 0.98;
+
+        const pos = roadCurve.getPointAt(ai.progress);
+        const tangent = roadCurve.getTangentAt(ai.progress);
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+        // Position car in its designated lane
+        ai.mesh.position.copy(pos).addScaledVector(normal, ai.laneOffset);
+        
+        // Face forward or backward along lane direction
+        const lookTarget = pos.clone().addScaledVector(tangent, ai.direction).addScaledVector(normal, ai.laneOffset);
+        ai.mesh.lookAt(lookTarget);
+
+        // Distance check to react to Player's Car
+        const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
+        if (distToPlayer < 18) {
+          // Slow down or stop if player is directly ahead
+          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.0001);
+        } else {
+          // Smoothly accelerate back up to normal target speed
+          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.00005);
+        }
+      });
 
       // Infinite Grass Follow
       grass.position.x = carGroup.position.x;

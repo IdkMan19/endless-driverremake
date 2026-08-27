@@ -268,13 +268,13 @@
       taillightR.position.set(0.65, 0.65, 2.02);
       visualBody.add(taillightR);
 
-      // High-Mount Central Brake Strip
+      // Central Brake Strip
       const centerBrakeGeo = new THREE.BoxGeometry(0.6, 0.08, 0.08);
       const centerBrake = new THREE.Mesh(centerBrakeGeo, taillightIdleMat);
       centerBrake.position.set(0, 1.42, 0.85);
       visualBody.add(centerBrake);
 
-      // Turn Signals Geometry
+      // Turn Signals
       const signalGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
 
       const signalFL = new THREE.Mesh(signalGeo, signalMatLeft);
@@ -293,7 +293,7 @@
       signalRR.position.set(0.92, 0.65, 2.02);
       visualBody.add(signalRR);
 
-      // Detailed Wheels
+      // Wheels
       const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
       wheelGeo.rotateZ(Math.PI / 2);
       
@@ -381,15 +381,15 @@
     let currentGearIndex = 2;
 
     const gearRatios = {
-      'R': { accel: -0.0050, maxSpeed: -0.60, isReverse: true },
+      'R': { accel: -0.0030, maxSpeed: -0.40, isReverse: true },
       'N': { accel: 0, maxSpeed: 0, isNeutral: true },
-      '1': { accel: 0.0120, maxSpeed: 0.80 },
-      '2': { accel: 0.0090, maxSpeed: 1.40 },
-      '3': { accel: 0.0070, maxSpeed: 2.10 },
-      '4': { accel: 0.0050, maxSpeed: 2.80 },
-      '5': { accel: 0.0038, maxSpeed: 3.50 },
-      '6': { accel: 0.0028, maxSpeed: 4.20 },
-      '7': { accel: 0.0020, maxSpeed: 5.00 } // Top speed translates to ~250+ MPH
+      '1': { accel: 0.0065, maxSpeed: 0.35 },
+      '2': { accel: 0.0050, maxSpeed: 0.60 },
+      '3': { accel: 0.0038, maxSpeed: 0.90 },
+      '4': { accel: 0.0028, maxSpeed: 1.20 },
+      '5': { accel: 0.0020, maxSpeed: 1.50 },
+      '6': { accel: 0.0014, maxSpeed: 1.75 },
+      '7': { accel: 0.0009, maxSpeed: 2.00 } // Max speed scaling yields ~160 MPH
     };
 
     // --- Driving Physics Parameters ---
@@ -401,8 +401,8 @@
     let activeSignal = 'OFF';
     let signalTimer = 0;
 
-    const BRAKE_POWER = 0.06;
-    const FRICTION = 0.994;
+    const BRAKE_POWER = 0.035;
+    const FRICTION = 0.993;
 
     const keys = { w: false, s: false, a: false, d: false, shift: false };
 
@@ -425,8 +425,7 @@
         const newGear = gearList[currentGearIndex];
         document.getElementById('gear-display').innerText = `GEAR: ${newGear}`;
 
-        // Money shift check for extreme downshifts at high speed
-        if ((oldGear === '6' || oldGear === '7') && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 2.0) {
+        if ((oldGear === '6' || oldGear === '7') && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 0.85) {
           triggerSpinout();
         }
       }
@@ -503,12 +502,11 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // High-speed tuned steering limits
         const absSpeed = Math.abs(speed);
-        const speedRatio = Math.min(absSpeed / 5.0, 1.0);
+        const speedRatio = Math.min(absSpeed / 2.00, 1.0);
         
-        const maxSteerLimit = 0.065 * (1.0 - speedRatio * 0.88); 
-        const steerBuildRate = 0.0010 + (1.0 - speedRatio) * 0.0008;
+        const maxSteerLimit = 0.065 * (1.0 - speedRatio * 0.82); 
+        const steerBuildRate = 0.0008 + (1.0 - speedRatio) * 0.0006;
 
         if (keys.a) {
           if (currentSteerAngle < maxSteerLimit) {
@@ -523,7 +521,7 @@
             currentSteerAngle += (-maxSteerLimit - currentSteerAngle) * 0.08;
           }
         } else {
-          const returnSpeed = 0.04 + (absSpeed * 0.05);
+          const returnSpeed = 0.04 + (absSpeed * 0.12);
           currentSteerAngle += (0 - currentSteerAngle) * returnSpeed;
         }
 
@@ -551,8 +549,8 @@
       playerVehicle.frontPivots[0].rotation.y = frontWheelAngle;
       playerVehicle.frontPivots[1].rotation.y = frontWheelAngle;
 
-      // Body roll logic (scaled for high speed stability)
-      const targetRoll = -currentSteerAngle * Math.min(speed * 0.8, 1.5);
+      // Body roll logic
+      const targetRoll = -currentSteerAngle * (speed * 2.2);
       playerVehicle.body.rotation.z += (targetRoll - playerVehicle.body.rotation.z) * 0.12;
 
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
@@ -592,16 +590,13 @@
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;
 
-      // Dynamic Chase Camera adjusting distance at higher speeds
-      const speedCamOffset = Math.abs(speed) * 0.8;
-      const cameraOffset = new THREE.Vector3(0, 3.5 + (speedCamOffset * 0.2), 8 + speedCamOffset).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+      const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      // Speedometer scaled to match the increased velocity
-      const mph = Math.round(Math.abs(speed) * 52);
+      const mph = Math.round(Math.abs(speed) * 80);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 
       renderer.render(scene, camera);

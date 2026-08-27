@@ -64,8 +64,8 @@
     grass.position.y = -0.05;
     scene.add(grass);
 
-    // --- Dynamic Two-Lane Road Setup ---
-    const ROAD_WIDTH = 16;
+    // --- Dynamic Two-Lane Solid Asphalt Road ---
+    const ROAD_WIDTH = 18;
     const pathPoints = [];
     
     // Generate long winding path
@@ -78,11 +78,21 @@
 
     const roadCurve = new THREE.CatmullRomCurve3(pathPoints);
 
-    // Dark Asphalt Mesh
-    const roadGeo = new THREE.TubeGeometry(roadCurve, 800, ROAD_WIDTH / 2, 2, false);
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1d, side: THREE.DoubleSide });
+    // Flat Cross-Section for a Solid 2-Lane Road
+    const shape = new THREE.Shape();
+    shape.moveTo(-ROAD_WIDTH / 2, 0);
+    shape.lineTo(ROAD_WIDTH / 2, 0);
+
+    const extrudeSettings = {
+      steps: 800,
+      bevelEnabled: false,
+      extrudePath: roadCurve
+    };
+
+    const roadGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x111115, side: THREE.DoubleSide });
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-    roadMesh.scale.set(1, 0.01, 1);
+    roadMesh.position.y = 0.01;
     scene.add(roadMesh);
 
     // Road Markings (Solid White Outer Shoulders + Yellow Center Line)
@@ -96,27 +106,27 @@
       const tangent = roadCurve.getTangentAt(i / linePoints.length);
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-      // Yellow Center Line
+      // Yellow Center Dashed Line
       if (i % 2 === 0) {
-        const centerDash = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 2.5), lineMatYellow);
+        const centerDash = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.05, 2.5), lineMatYellow);
         centerDash.position.copy(pt);
-        centerDash.position.y = 0.02;
+        centerDash.position.y = 0.03;
         centerDash.lookAt(nextPt);
         scene.add(centerDash);
       }
 
       // Solid White Left Shoulder
-      const leftEdge = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 3), lineMatWhite);
-      leftEdge.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 - 0.5);
-      leftEdge.position.y = 0.02;
-      leftEdge.lookAt(nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.5));
+      const leftEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.05, 3), lineMatWhite);
+      leftEdge.position.copy(pt).addScaledVector(normal, ROAD_WIDTH / 2 - 0.6);
+      leftEdge.position.y = 0.03;
+      leftEdge.lookAt(nextPt.clone().addScaledVector(normal, ROAD_WIDTH / 2 - 0.6));
       scene.add(leftEdge);
 
       // Solid White Right Shoulder
-      const rightEdge = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 3), lineMatWhite);
-      rightEdge.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.5));
-      rightEdge.position.y = 0.02;
-      rightEdge.lookAt(nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.5)));
+      const rightEdge = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.05, 3), lineMatWhite);
+      rightEdge.position.copy(pt).addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6));
+      rightEdge.position.y = 0.03;
+      rightEdge.lookAt(nextPt.clone().addScaledVector(normal, -(ROAD_WIDTH / 2 - 0.6)));
       scene.add(rightEdge);
     }
 
@@ -175,17 +185,17 @@
 
     // --- Driving Physics Parameters ---
     let speed = 0;
-    let steeringInputPower = 0; // Gradually increases while turning key is held
+    let steeringInputPower = 0;
     
-    const ACCEL = 0.007;        // Slower acceleration
-    const BRAKE_POWER = 0.035;  // More sensitive braking
+    const ACCEL = 0.007;
+    const BRAKE_POWER = 0.035;
     const REVERSE_ACCEL = 0.005;
     const FRICTION = 0.985;
     const MAX_SPEED = 1.2;
     const MAX_REVERSE = -0.35;
     
-    const STEER_RAMP_SPEED = 0.015; // Smooth progressive turning ramp
-    const MAX_STEER_ANGLE = 0.035;  // Maximum steering cap
+    const STEER_RAMP_SPEED = 0.015;
+    const MAX_STEER_ANGLE = 0.035;
 
     const keys = { forward: false, backward: false, left: false, right: false };
 
@@ -216,13 +226,13 @@
       // 1. Acceleration & Sensitive Braking / Reverse Logic
       if (keys.forward) {
         if (speed < 0) {
-          speed += BRAKE_POWER; // Sensitive brake while rolling backward
+          speed += BRAKE_POWER;
         } else {
           speed = Math.min(speed + ACCEL, MAX_SPEED);
         }
       } else if (keys.backward) {
         if (speed > 0) {
-          speed -= BRAKE_POWER; // Sensitive brake while moving forward
+          speed -= BRAKE_POWER;
         } else {
           speed = Math.max(speed - REVERSE_ACCEL, MAX_REVERSE);
         }
@@ -238,10 +248,9 @@
       } else if (keys.right) {
         steeringInputPower = Math.max(steeringInputPower - STEER_RAMP_SPEED, -1.0);
       } else {
-        steeringInputPower *= 0.75; // Return steering smoothly to center
+        steeringInputPower *= 0.75;
       }
 
-      // Turn rate scales smoothly with car speed and current steering ramp
       if (Math.abs(speed) > 0.005) {
         const turnDirection = speed >= 0 ? 1 : -1;
         const currentTurnRate = steeringInputPower * MAX_STEER_ANGLE;

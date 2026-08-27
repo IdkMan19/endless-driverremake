@@ -84,9 +84,6 @@
     const NUM_POINTS = 300;
     const pathPoints = [];
 
-    // Randomize curve frequencies each load
-    const freqA = 0.05 + Math.random() * 0.08;
-    const freqB = 0.02 + Math.random() * 0.04;
     const radiusX = 600 + Math.random() * 300;
     const radiusZ = 600 + Math.random() * 300;
 
@@ -98,10 +95,9 @@
       pathPoints.push(new THREE.Vector3(x, 0, z));
     }
 
-    const roadCurve = new THREE.CatmullRomCurve3(pathPoints, true); // Closed loop for infinite driving in both directions
+    const roadCurve = new THREE.CatmullRomCurve3(pathPoints, true);
     const curvePoints = roadCurve.getSpacedPoints(1200);
 
-    // Build Flat Asphalt Ribbon Geometry
     const roadVertices = [];
     const roadIndices = [];
 
@@ -122,7 +118,6 @@
         roadIndices.push(base + 1, base + 3, base + 2);
       }
     }
-    // Connect loop tail to head
     const lastBase = (curvePoints.length - 1) * 2;
     roadIndices.push(lastBase, lastBase + 1, 0);
     roadIndices.push(lastBase + 1, 1, 0);
@@ -224,7 +219,6 @@
     const carGroup = createCarMesh(0xcc0000);
     scene.add(carGroup);
     
-    // Spawn player on start of curve facing forward
     const startPos = roadCurve.getPointAt(0);
     const startTangent = roadCurve.getTangentAt(0);
     carGroup.position.copy(startPos);
@@ -243,7 +237,9 @@
       const progress = (i / NUM_AI_CARS);
       const laneSide = i % 2 === 0 ? 1 : -1;
       const laneOffset = (ROAD_WIDTH / 4) * laneSide;
-      const baseSpeed = (0.0004 + Math.random() * 0.0003);
+
+      // Scaled down to 20% of previous speed (0.00008 to 0.00014)
+      const baseSpeed = (0.0004 + Math.random() * 0.0003) * 0.2;
 
       aiCars.push({
         mesh: mesh,
@@ -257,9 +253,8 @@
 
     // --- Gear Index Setup ---
     const gearList = ['R', 'N', '1', '2', '3', '4', '5'];
-    let currentGearIndex = 2; // Start in 1st gear ('1')
+    let currentGearIndex = 2;
 
-    // Slower acceleration parameters across all gears
     const gearRatios = {
       'R': { accel: -0.0020, maxSpeed: -0.30, isReverse: true },
       'N': { accel: 0, maxSpeed: 0, isNeutral: true },
@@ -277,7 +272,7 @@
     let spinoutTimer = 0;
 
     const BRAKE_POWER = 0.025;
-    const FRICTION = 0.991; // Slightly smoother coasting
+    const FRICTION = 0.991;
     const STEER_RAMP_SPEED = 0.015;
     const MAX_STEER_ANGLE = 0.035;
 
@@ -306,7 +301,6 @@
         const newGear = gearList[currentGearIndex];
         document.getElementById('gear-display').innerText = `GEAR: ${newGear}`;
 
-        // Spin-Out Trigger: 5th down to 1st or Reverse at speed
         if (oldGear === '5' && (newGear === '1' || newGear === 'R') && Math.abs(speed) > 0.65) {
           triggerSpinout();
         }
@@ -351,7 +345,6 @@
           document.getElementById('warning').style.display = 'none';
         }
       } else {
-        // Throttle Logic with reduced acceleration rate
         if (keys.forward) {
           if (!keys.clutch && !activeGear.isNeutral) {
             if (activeGear.isReverse) {
@@ -364,7 +357,6 @@
           speed *= FRICTION;
         }
 
-        // Brake Pedal
         if (keys.backward) {
           if (speed > 0) {
             speed = Math.max(0, speed - BRAKE_POWER);
@@ -375,7 +367,6 @@
 
         if (Math.abs(speed) < 0.0005) speed = 0;
 
-        // Steering Logic
         if (keys.left) {
           steeringInputPower = Math.min(steeringInputPower + STEER_RAMP_SPEED, 1.0);
         } else if (keys.right) {
@@ -391,11 +382,10 @@
         }
       }
 
-      // Physics Translation
       const forwardVector = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       carGroup.position.addScaledVector(forwardVector, speed);
 
-      // --- Update AI Traffic Loop ---
+      // --- Update AI Traffic (20% Speed Adjusted) ---
       aiCars.forEach(ai => {
         ai.progress += ai.currentSpeed * ai.direction;
         if (ai.progress > 1) ai.progress -= 1;
@@ -412,24 +402,21 @@
 
         const distToPlayer = ai.mesh.position.distanceTo(carGroup.position);
         if (distToPlayer < 18) {
-          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.00001);
+          ai.currentSpeed = Math.max(0, ai.currentSpeed - 0.000002);
         } else {
-          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.000005);
+          ai.currentSpeed = Math.min(ai.targetSpeed, ai.currentSpeed + 0.000001);
         }
       });
 
-      // Infinite Grass Plane Tracking
       grass.position.x = carGroup.position.x;
       grass.position.z = carGroup.position.z;
 
-      // Camera Position Tracking
       const cameraOffset = new THREE.Vector3(0, 3.5, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
       camera.position.copy(carGroup.position).add(cameraOffset);
       
       const lookAtTarget = carGroup.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       camera.lookAt(lookAtTarget);
 
-      // Speedometer Readout
       const mph = Math.round(Math.abs(speed) * 80);
       document.getElementById('speedometer').innerText = `${mph} MPH`;
 
